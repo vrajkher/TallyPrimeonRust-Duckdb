@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en-IN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14352d">
+  <title>Voucher Desk</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#entry">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>Voucher Desk</span>
+    </a>
+    <nav aria-label="Workspace">
+      <a class="nav-link active" href="#entry" data-section="entry"><i class="icon icon-voucher" aria-hidden="true"></i>Voucher entry</a>
+      <a class="nav-link" href="#register" data-section="register"><i class="icon icon-register" aria-hidden="true"></i>Voucher register</a>
+      <button class="nav-link" id="manage-ledgers" type="button"><i class="icon icon-ledger" aria-hidden="true"></i>Ledgers</button>
+    </nav>
+    <div class="sidebar-footer"><span aria-hidden="true"></span>Local books</div>
+  </aside>
+
+  <main class="workspace">
+    <div class="topbar">
+      <div>Books <span aria-hidden="true">/</span> Vouchers</div>
+      <span class="currency-label">INR <span>·</span> Indian rupee</span>
+    </div>
+
+    <div class="content">
+      <section id="entry" aria-labelledby="entry-title">
+        <header class="page-heading">
+          <h1 id="entry-title">Vouchers</h1>
+          <p>Record payments, receipts, and journal entries.</p>
+        </header>
+
+        <div class="entry-layout">
+          <form id="voucher-form" class="paper voucher-form">
+            <div class="card-heading">
+              <div>
+                <h2>New voucher</h2>
+                <p id="mode-description">Record money paid from cash or bank.</p>
+              </div>
+              <span id="draft-status" class="draft-status">Draft</span>
+            </div>
+
+            <fieldset id="voucher-fields">
+              <legend class="sr-only">Voucher details</legend>
+              <div class="voucher-types" role="group" aria-label="Voucher type">
+                <button class="type-button" type="button" data-voucher-kind="payment" aria-pressed="true">
+                  <span class="direction" aria-hidden="true">↑</span><span>Payment</span><kbd>F5</kbd>
+                </button>
+                <button class="type-button" type="button" data-voucher-kind="receipt" aria-pressed="false">
+                  <span class="direction" aria-hidden="true">↓</span><span>Receipt</span><kbd>F6</kbd>
+                </button>
+                <button class="type-button" type="button" data-voucher-kind="journal" aria-pressed="false">
+                  <span class="direction" aria-hidden="true">⇄</span><span>Journal</span><kbd>F7</kbd>
+                </button>
+              </div>
+
+              <div class="form-grid">
+                <label class="field voucher-date">
+                  <span>Voucher date</span>
+                  <input name="date" type="date" min="0001-01-01" max="9999-12-31" required>
+                </label>
+                <fieldset id="cash-fields" class="cash-fields">
+                  <legend class="sr-only">Cash or bank entry</legend>
+                  <label class="field">
+                    <span>Amount</span>
+                    <span class="amount-input"><span aria-hidden="true">₹</span><input name="amount" inputmode="decimal" placeholder="0.00" maxlength="24" pattern="[0-9]+([.][0-9]{1,2})?" title="Enter a positive amount with up to two decimal places" required></span>
+                  </label>
+                  <label class="field">
+                    <span id="cash-label">Paid from</span>
+                    <select name="cash_ledger_id" required disabled><option value="">Loading ledgers…</option></select>
+                  </label>
+                  <div class="field">
+                    <div class="field-heading">
+                      <label for="party-ledger" id="party-label">Paid to / expense</label>
+                      <button class="text-button" id="inline-ledger" type="button">+ Add ledger</button>
+                    </div>
+                    <select name="other_ledger_id" id="party-ledger" required disabled><option value="">Loading ledgers…</option></select>
+                  </div>
+                </fieldset>
+                <fieldset id="journal-fields" class="field full journal-fields" hidden disabled>
+                  <legend class="sr-only">Journal postings</legend>
+                  <div class="journal-heading">
+                    <strong>Journal lines</strong>
+                    <button class="text-button" id="journal-ledger" type="button">+ Add ledger</button>
+                  </div>
+                  <div class="journal-line journal-columns" aria-hidden="true"><span>Side</span><span>Ledger</span><span>Amount (₹)</span></div>
+                  <div id="journal-lines" class="journal-lines"></div>
+                  <button class="button secondary" id="add-journal-line" type="button">+ Add line</button>
+                </fieldset>
+                <label class="field full">
+                  <span>Reference <small>Optional</small></span>
+                  <input name="reference" maxlength="100" placeholder="Cheque, UTR, or document number">
+                </label>
+                <label class="field full">
+                  <span>Narration <small>Optional</small></span>
+                  <textarea name="narration" rows="2" maxlength="500" placeholder="Add a note for this voucher"></textarea>
+                </label>
+              </div>
+
+              <div class="form-actions">
+                <button class="button primary" id="save-voucher" type="submit" disabled>Save payment</button>
+                <button class="button plain" id="clear-voucher" type="button">Clear form</button>
+                <span class="save-shortcut"><kbd>Ctrl</kbd> <kbd>Enter</kbd></span>
+              </div>
+            </fieldset>
+            <p id="voucher-status" class="inline-status" role="status" hidden></p>
+          </form>
+
+          <section class="paper preview" aria-labelledby="preview-title">
+            <div class="card-heading">
+              <div>
+                <h2 id="preview-title">Posting preview</h2>
+                <p><span id="preview-mode">Payment</span> · <span id="preview-date"></span></p>
+              </div>
+            </div>
+            <div class="preview-entries" id="cash-preview">
+              <div class="posting-line">
+                <span class="side">Dr</span>
+                <div><span class="posting-label">Debit</span><strong id="preview-debit">Choose a ledger</strong></div>
+                <span class="preview-amount">—</span>
+              </div>
+              <div class="posting-line">
+                <span class="side credit">Cr</span>
+                <div><span class="posting-label">Credit</span><strong id="preview-credit">Choose a ledger</strong></div>
+                <span class="preview-amount">—</span>
+              </div>
+            </div>
+            <div class="journal-preview" id="journal-preview" hidden>
+              <dl>
+                <div><dt>Total debit</dt><dd id="journal-debit">—</dd></div>
+                <div><dt>Total credit</dt><dd id="journal-credit">—</dd></div>
+                <div><dt>Difference</dt><dd id="journal-difference">—</dd></div>
+              </dl>
+              <p id="journal-balance" class="inline-status" role="status" hidden></p>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="register" class="paper register" aria-labelledby="register-title">
+        <div class="card-heading register-heading">
+          <div>
+            <h2 id="register-title">Voucher register</h2>
+            <p id="register-count" aria-live="polite">Loading vouchers…</p>
+          </div>
+          <button class="button secondary" id="reload-register" type="button">Refresh</button>
+        </div>
+
+        <form id="register-form" class="filters" aria-label="Filter vouchers">
+          <label class="field filter-search"><span>Search</span><input type="search" name="q" placeholder="Voucher, ledger, or reference" maxlength="100"></label>
+          <label class="field"><span>Type</span>
+            <select name="kind"><option value="">All vouchers</option><option value="payment">Payments</option><option value="receipt">Receipts</option><option value="journal">Journals</option></select>
+          </label>
+          <label class="field"><span>From</span><input type="date" name="from" min="0001-01-01" max="9999-12-31"></label>
+          <label class="field"><span>To</span><input type="date" name="to" min="0001-01-01" max="9999-12-31"></label>
+          <div class="filter-actions">
+            <button class="button secondary" type="submit">Apply</button>
+            <button class="button plain" id="clear-filters" type="button">Clear</button>
+          </div>
+        </form>
+
+        <dl class="register-totals">
+          <div><dt>Receipts</dt><dd id="receipt-total">—</dd></div>
+          <div><dt>Payments</dt><dd id="payment-total">—</dd></div>
+          <div><dt>Receipts less payments</dt><dd id="net-total">—</dd></div>
+        </dl>
+
+        <p id="register-status" class="inline-status" role="status" hidden></p>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Voucher table">
+          <table class="voucher-table">
+            <thead><tr><th scope="col">Voucher no.</th><th scope="col">Date</th><th scope="col">Type</th><th scope="col">Particulars</th><th scope="col">Cash / bank</th><th scope="col">Amount</th></tr></thead>
+            <tbody id="register-rows"></tbody>
+          </table>
+        </div>
+        <div id="pagination" class="pagination" hidden>
+          <span id="page-label"></span>
+          <button class="button secondary" id="previous-page" type="button">Previous</button>
+          <button class="button secondary" id="next-page" type="button">Next</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <template id="journal-line-template">
+    <div class="journal-line">
+      <label class="field"><select data-journal="side" required><option value="debit">Debit</option><option value="credit">Credit</option></select></label>
+      <label class="field"><select data-journal="ledger" required><option value="">Select a ledger</option></select></label>
+      <label class="field"><input data-journal="amount" inputmode="decimal" placeholder="0.00" maxlength="24" pattern="[0-9]+([.][0-9]{1,2})?" title="Enter a positive amount with up to two decimal places" required></label>
+      <button type="button" class="close-button" data-journal="remove">×</button>
+    </div>
+  </template>
+
+  <dialog id="ledger-dialog" aria-labelledby="ledger-dialog-title">
+    <div class="dialog-heading">
+      <h2 id="ledger-dialog-title">Ledgers</h2>
+      <button type="button" class="close-button" aria-label="Close ledgers" data-close="ledger-dialog">×</button>
+    </div>
+    <form id="ledger-form">
+      <label class="field"><span>Ledger name</span><input name="name" maxlength="100" placeholder="e.g. Conveyance or a customer name" required></label>
+      <label class="field"><span>Ledger type</span><select name="kind"><option value="general">Party / income / expense</option><option value="bank">Bank</option><option value="cash">Cash</option></select></label>
+      <button class="button primary" type="submit">Create ledger</button>
+    </form>
+    <p id="ledger-status" class="inline-status" role="status" hidden></p>
+    <div id="ledger-list-section">
+      <h3>Existing ledgers</h3>
+      <ul id="ledger-list" class="ledger-list"></ul>
+    </div>
+  </dialog>
+
+  <dialog id="detail-dialog" aria-labelledby="detail-title">
+    <div class="dialog-heading">
+      <div><h2 id="detail-title">Voucher</h2><p id="detail-subtitle"></p></div>
+      <button type="button" class="close-button" aria-label="Close voucher" data-close="detail-dialog">×</button>
+    </div>
+    <div id="voucher-print">
+      <dl class="voucher-details" id="detail-fields"></dl>
+      <table class="detail-table">
+        <thead><tr><th scope="col">Ledger</th><th scope="col">Debit</th><th scope="col">Credit</th></tr></thead>
+        <tbody id="detail-postings"></tbody>
+      </table>
+    </div>
+    <div class="dialog-actions"><button type="button" class="button primary" id="print-voucher">Print voucher</button></div>
+  </dialog>
+</body>
+</html>

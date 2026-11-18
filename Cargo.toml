@@ -1,0 +1,19 @@
+[package]
+name = "voucher-desk"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+description = "Local payment and receipt vouchers backed by DuckDB"
+
+[features]
+default = ["bundled-duckdb"]
+bundled-duckdb = ["duckdb/bundled"]
+
+[dependencies]
+axum = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+duckdb = "=1.4.4"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
+uuid = "1"

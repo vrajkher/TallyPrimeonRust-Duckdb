@@ -15,7 +15,9 @@ use axum::{
 };
 use serde::Serialize;
 
-use ot_store::bank::{MatchRequest, MatchResult, Review, StatementImport, StatementImportResult, UndoMatch};
+use ot_store::bank::{
+    MatchRequest, MatchResult, Review, StatementImport, StatementImportResult, UndoMatch,
+};
 use ot_store::imports::{ImportRequest, ImportSummary};
 use ot_store::reports::{
     AccountGroup, BookSettings, ClosePeriod, CompanyName, CostFilter, CostTotal, NewGroup, Opening,
@@ -59,14 +61,20 @@ impl IntoResponse for ApiError {
 }
 
 async fn list_ledgers(State(db): State<Database>) -> ApiResult<Json<Vec<Ledger>>> {
-    db.read(|store| store.ledgers()).await.map(Json).map_err(ApiError)
+    db.read(|store| store.ledgers())
+        .await
+        .map(Json)
+        .map_err(ApiError)
 }
 
 async fn add_ledger(
     State(db): State<Database>,
     Json(input): Json<NewLedger>,
 ) -> ApiResult<(StatusCode, Json<Ledger>)> {
-    let ledger = db.write(|store| store.add_ledger(input)).await.map_err(ApiError)?;
+    let ledger = db
+        .write(|store| store.add_ledger(input))
+        .await
+        .map_err(ApiError)?;
     Ok((StatusCode::CREATED, Json(ledger)))
 }
 
@@ -74,18 +82,27 @@ async fn list_vouchers(
     State(db): State<Database>,
     Query(filter): Query<RegisterFilter>,
 ) -> ApiResult<Json<Register>> {
-    db.read(|store| store.register(filter)).await.map(Json).map_err(ApiError)
+    db.read(|store| store.register(filter))
+        .await
+        .map(Json)
+        .map_err(ApiError)
 }
 
 async fn get_voucher(State(db): State<Database>, Path(id): Path<i64>) -> ApiResult<Json<Voucher>> {
-    db.read(move |store| store.voucher(id)).await.map(Json).map_err(ApiError)
+    db.read(move |store| store.voucher(id))
+        .await
+        .map(Json)
+        .map_err(ApiError)
 }
 
 async fn add_voucher(
     State(db): State<Database>,
     Json(input): Json<NewVoucher>,
 ) -> ApiResult<(StatusCode, Json<Voucher>)> {
-    let (voucher, created) = db.write(|store| store.add_voucher(input)).await.map_err(ApiError)?;
+    let (voucher, created) = db
+        .write(|store| store.add_voucher(input))
+        .await
+        .map_err(ApiError)?;
     let status = if created {
         StatusCode::CREATED
     } else {
@@ -109,7 +126,10 @@ async fn history(
     State(db): State<Database>,
     Path(id): Path<i64>,
 ) -> ApiResult<Json<Vec<VoucherEvent>>> {
-    db.read(move |store| store.history(id)).await.map(Json).map_err(ApiError)
+    db.read(move |store| store.history(id))
+        .await
+        .map(Json)
+        .map_err(ApiError)
 }
 
 async fn revision(
@@ -126,22 +146,34 @@ async fn import_book(
     State(db): State<Database>,
     Json(input): Json<ImportRequest>,
 ) -> ApiResult<Json<ImportSummary>> {
-    db.write(|store| store.import(input)).await.map(Json).map_err(ApiError)
+    db.write(|store| store.import(input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
 }
 
 async fn groups(State(db): State<Database>) -> ApiResult<Json<Vec<AccountGroup>>> {
-    db.read(|store| store.groups()).await.map(Json).map_err(ApiError)
+    db.read(|store| store.groups())
+        .await
+        .map(Json)
+        .map_err(ApiError)
 }
 
 async fn add_group(
     State(db): State<Database>,
     Json(input): Json<NewGroup>,
 ) -> ApiResult<Json<AccountGroup>> {
-    db.write(|store| store.add_group(input)).await.map(Json).map_err(ApiError)
+    db.write(|store| store.add_group(input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
 }
 
 async fn settings(State(db): State<Database>) -> ApiResult<Json<BookSettings>> {
-    db.read(|store| store.settings()).await.map(Json).map_err(ApiError)
+    db.read(|store| store.settings())
+        .await
+        .map(Json)
+        .map_err(ApiError)
 }
 
 async fn name_company(
@@ -350,9 +382,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(err) => return Err(format!("Cannot read OPENTALLY_BIND_ADDR: {err}").into()),
     };
     if let Some(backup) = ot_store::migrate::backup_before_migrating(&path)? {
-        println!("Backed up the book to {} before upgrading it", backup.display());
+        println!(
+            "Backed up the book to {} before upgrading it",
+            backup.display()
+        );
     }
-    let db = Database::start(Store::open(&path)?)?;
+    let db = Database::start(Store::open(&path)?)
+        .map_err(|_| "The book's database worker could not start.")?;
     let listener = tokio::net::TcpListener::bind(SocketAddr::new(bind_addr, port)).await?;
     println!("OpenTally is running at http://{}", listener.local_addr()?);
     println!("Database: {}", path.display());

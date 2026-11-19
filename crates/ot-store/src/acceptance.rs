@@ -269,7 +269,10 @@ fn bank_matching_checks_splits_duplicates_and_reversible_selection() {
 #[test]
 fn migration_preserves_legacy_voucher_codes_and_replays() {
     let db = Connection::open_in_memory().unwrap();
-    db.execute_batch(include_str!("legacy.sql")).unwrap();
+    db.execute_batch(include_str!(
+        "../migrations/duckdb/0001_initial/1_legacy.sql"
+    ))
+    .unwrap();
     db.execute_batch("
         INSERT INTO ledgers (name,name_key,kind) VALUES ('Travel','travel','general');
         INSERT INTO vouchers (request_id,kind,number,voucher_date,cash_ledger_id,other_ledger_id,amount_paise,reference,narration)

@@ -2,6 +2,7 @@
 /data/
 *.duckdb
 *.duckdb.wal
+*.duckdb.bak-v*
 
 /connectors/mcp/node_modules/
 /connectors/mcp/dist/

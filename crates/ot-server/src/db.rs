@@ -52,10 +52,11 @@ impl Database {
 
     /// Queues `work` on the writer thread now, so writes run in the order they are
     /// called, and returns a future for its result.
-    pub fn write<T: Send + 'static>(
-        &self,
-        work: impl FnOnce(&mut Store) -> Result<T, StoreError> + Send + 'static,
-    ) -> impl Future<Output = Result<T, StoreError>> + use<T> {
+    pub fn write<T, F>(&self, work: F) -> impl Future<Output = Result<T, StoreError>> + use<T, F>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut Store) -> Result<T, StoreError> + Send + 'static,
+    {
         let (reply, result) = oneshot::channel();
         let queued = self.writer.send(Box::new(move |store: &mut Store| {
             let _ = reply.send(work(store));
@@ -98,10 +99,10 @@ impl Readers {
     }
 
     fn checkin(&self, store: Store) {
-        if let Ok(mut idle) = self.idle.lock() {
-            if idle.len() < MAX_IDLE_READERS {
-                idle.push(store);
-            }
+        if let Ok(mut idle) = self.idle.lock()
+            && idle.len() < MAX_IDLE_READERS
+        {
+            idle.push(store);
         }
     }
 }
@@ -120,7 +121,9 @@ mod tests {
     async fn reads_see_committed_writes() {
         let db = database();
         let name = serde_json::from_value(serde_json::json!({"name": "Shree Traders"})).unwrap();
-        db.write(move |store| store.name_company(name)).await.unwrap();
+        db.write(move |store| store.name_company(name))
+            .await
+            .unwrap();
         let settings = db.read(|store| store.settings()).await.unwrap();
         assert_eq!(
             serde_json::to_value(settings).unwrap()["company_name"],
@@ -146,13 +149,10 @@ mod tests {
         };
         running.await.unwrap();
 
-        let read = tokio::time::timeout(
-            Duration::from_secs(10),
-            db.read(|store| store.ledgers()),
-        )
-        .await
-        .expect("a read finished while the writer was busy")
-        .unwrap();
+        let read = tokio::time::timeout(Duration::from_secs(10), db.read(|store| store.ledgers()))
+            .await
+            .expect("a read finished while the writer was busy")
+            .unwrap();
         assert!(read.len() >= 2, "a new book has Cash and Bank");
 
         release.send(()).unwrap();

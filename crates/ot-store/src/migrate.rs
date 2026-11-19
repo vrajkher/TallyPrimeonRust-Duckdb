@@ -48,9 +48,13 @@ pub enum MigrationError {
     Database(duckdb::Error),
     Io(std::io::Error),
     /// The book records a migration whose SQL differs from this build's.
-    Changed { version: i32 },
+    Changed {
+        version: i32,
+    },
     /// The book was migrated by a newer OpenTally.
-    TooNew { version: i32 },
+    TooNew {
+        version: i32,
+    },
 }
 
 impl std::fmt::Display for MigrationError {
@@ -154,7 +158,10 @@ pub fn run(tx: &Transaction<'_>) -> Result<Vec<i32>, MigrationError> {
     let mut applied = Vec::new();
     for migration in MIGRATIONS {
         let checksum = migration.checksum();
-        match recorded.iter().find(|(version, _)| *version == migration.version) {
+        match recorded
+            .iter()
+            .find(|(version, _)| *version == migration.version)
+        {
             Some((_, Some(stored))) if *stored != checksum => {
                 return Err(MigrationError::Changed {
                     version: migration.version,
@@ -235,7 +242,9 @@ mod tests {
             .unwrap();
         assert!(migrate(&mut connection).unwrap().is_empty());
         let checksum: String = connection
-            .query_row("SELECT checksum FROM schema_migrations", [], |row| row.get(0))
+            .query_row("SELECT checksum FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(checksum, MIGRATIONS[0].checksum());
     }
@@ -274,7 +283,9 @@ mod tests {
         // A Voucher Desk book: no schema_migrations table yet.
         Connection::open(&path)
             .unwrap()
-            .execute_batch(include_str!("../migrations/duckdb/0001_initial/1_legacy.sql"))
+            .execute_batch(include_str!(
+                "../migrations/duckdb/0001_initial/1_legacy.sql"
+            ))
             .unwrap();
         assert_eq!(file_version(&path).unwrap(), 0);
         let backup = backup_before_migrating(&path).unwrap().unwrap();

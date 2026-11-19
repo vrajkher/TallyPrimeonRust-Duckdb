@@ -296,28 +296,32 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn open(path: &Path) -> duckdb::Result<Self> {
+    /// Opens a book file, applying any pending schema migrations.
+    /// Call [`crate::migrate::backup_before_migrating`] first to keep a copy.
+    pub fn open(path: &Path) -> Result<Self, crate::migrate::MigrationError> {
         Self::initialize(Connection::open(path)?)
     }
 
-    pub(crate) fn initialize(mut connection: Connection) -> duckdb::Result<Self> {
+    /// A new, empty book in memory, for tests and previews.
+    pub fn open_in_memory() -> Result<Self, crate::migrate::MigrationError> {
+        Self::initialize(Connection::open_in_memory()?)
+    }
+
+    pub(crate) fn initialize(
+        mut connection: Connection,
+    ) -> Result<Self, crate::migrate::MigrationError> {
         let tx = connection.transaction()?;
-        tx.execute_batch(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)",
-        )?;
-        let migrated: bool = tx.query_row(
-            "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 1)",
-            [],
-            |row| row.get(0),
-        )?;
-        if !migrated {
-            tx.execute_batch(include_str!("legacy.sql"))?;
-            tx.execute_batch(include_str!("schema.sql"))?;
-            tx.execute_batch(include_str!("migrate_v1.sql"))?;
-            tx.execute("INSERT INTO schema_migrations VALUES (1)", [])?;
-        }
+        crate::migrate::run(&tx)?;
         tx.commit()?;
         Ok(Self { connection })
+    }
+
+    /// Another connection to the same open book, for concurrent reads.
+    /// It shares the database instance, so it sees every committed write.
+    pub fn reader(&self) -> Result<Self, StoreError> {
+        Ok(Self {
+            connection: self.connection.try_clone()?,
+        })
     }
 
     pub fn ledgers(&self) -> Result<Vec<Ledger>, StoreError> {

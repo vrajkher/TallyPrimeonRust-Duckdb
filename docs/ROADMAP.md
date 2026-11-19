@@ -37,11 +37,11 @@ This roadmap breaks the work into **10 levels**, plus an **AI integration track 
   6. MCP tools;
   7. tests.
 - Reuse what exists:
-  - `Store::initialize` and the `schema_migrations` table (`src/store.rs:302`);
-  - `run_db` (`src/main.rs`);
-  - the revision model (`voucher_revisions`, `current_vouchers` view in `src/schema.sql`);
-  - the import preview/commit flow (`src/imports.rs`);
-  - the acceptance-test style (`src/acceptance.rs`, `temporary_book()`).
+  - `Store::initialize` and the migration runner (`crates/ot-store/src/store.rs`, `crates/ot-store/src/migrate.rs`);
+  - `Database::read` / `Database::write` (`crates/ot-server/src/db.rs`);
+  - the revision model (`voucher_revisions`, `current_vouchers` view in `crates/ot-store/migrations/duckdb/0001_initial/2_schema.sql`);
+  - the import preview/commit flow (`crates/ot-store/src/imports.rs`);
+  - the acceptance-test style (`crates/ot-store/src/acceptance.rs`, `temporary_book()`).
 - Toolchain: rustc 1.97 is installed. Add the `wasm32-unknown-unknown` target and Trunk in Level 0.
 
 ---
@@ -251,7 +251,7 @@ Every level adds its own MCP tools and CLI commands. Level A holds the shared AI
 | A1.2 | Scopes | API tokens and OAuth carry scopes: `read`, `draft`, `submit`, `admin`. Writes are off by default, as the connector is today. |
 | A1.3 | Draft-first | AI-created documents stay **Draft** until a person, or a token with the `submit` scope, submits them. Closed periods are refused as usual. |
 | A1.4 | Audit | Every AI call is logged with actor `ai:<client>/<user>`, tool, arguments hash and result. AI changes are visible in revision history. |
-| A1.5 | Safety | Reuse `request_key` idempotency (`src/store.rs`). Annotate `destructive` and `idempotent` on tools. Rate limits per token. Bound size and row counts of results. |
+| A1.5 | Safety | Reuse `request_key` idempotency (`crates/ot-store/src/store.rs`). Annotate `destructive` and `idempotent` on tools. Rate limits per token. Bound size and row counts of results. |
 | A1.6 | OAuth for remote MCP | `ot-server` acts as an OAuth 2.1 authorisation server: protected-resource metadata, dynamic client registration and PKCE. Users sign in with their OpenTally login. This replaces the external identity provider needed by `connectors/mcp/src/oauth.mjs`. |
 
 ### A2 — MCP server features (grow with each level)
@@ -324,7 +324,7 @@ Level A runs alongside: A1–A3 with L0 · tools grow with L1–L8 · A4 ships a
 | Level | State |
 |---|---|
 | Plan, licence, roadmap | ✅ Done (PR #4) |
-| Level 0 | ⏳ Next |
+| Level 0 | ⏳ In progress: 0.1 workspace, 0.2 migration runner and 0.3 single writer done; 0.2b moves to the next PR with `ot-core` |
 | All later levels | Not started |
 
 ## Verification (each level)

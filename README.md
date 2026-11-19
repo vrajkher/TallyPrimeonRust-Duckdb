@@ -35,6 +35,8 @@ The first build compiles the bundled DuckDB library. When the app is running, op
 
 For Docker, set `OPENTALLY_BIND_ADDR=0.0.0.0` inside the container so Kiri can reach OpenTally on the container network. Keep the accounting port on a trusted network because the OpenTally web interface has no built-in authentication.
 
+When a book needs a schema upgrade, OpenTally first copies it to `<book>.bak-v<version>` next to the original, then upgrades it. A book upgraded by a newer OpenTally is refused rather than changed.
+
 The previous `VOUCHER_DB` and `VOUCHER_PORT` settings are accepted. The default path also matches Voucher Desk. When OpenTally first opens an existing file, it migrates vouchers to ordered posting lines while preserving their IDs and numbers. Use OpenTally to post new entries after migrating a book.
 
 Run this command on macOS or Linux to practice with a separate book.

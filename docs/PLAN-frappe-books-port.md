@@ -113,7 +113,7 @@ Key choices:
 
 ## 6. Phases
 
-Each phase ends with passing `cargo test`, extended acceptance tests (`src/acceptance.rs` style), updated MCP tools and README.
+Each phase ends with passing `cargo test`, extended acceptance tests (`crates/ot-store/src/acceptance.rs` style), updated MCP tools and README.
 
 ### Phase 0 — Foundation
 - Convert to a Cargo workspace and move current modules into `ot-store` / `ot-server` with no behaviour change.

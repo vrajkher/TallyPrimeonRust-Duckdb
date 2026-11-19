@@ -349,7 +349,44 @@ fn book_routes() -> Router<AppState> {
         .route("/tokens/{id}", delete(auth::revoke_token))
 }
 
+/// Where the built Leptos interface is served from. `trunk build` in `crates/ot-web`
+/// writes it to `crates/ot-web/dist`.
+fn ui_dir() -> PathBuf {
+    env::var_os("OPENTALLY_UI_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("crates/ot-web/dist"))
+}
+
+const UI_MISSING: &str = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>OpenTally</title>\
+<body style=\"font-family:system-ui;max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.5\">\
+<h1>The new OpenTally interface is not built</h1>\
+<p>Build it with <code>trunk build --release</code> in <code>crates/ot-web</code>, or set \
+<code>OPENTALLY_UI_DIR</code> to a built copy. The <a href=\"/\">classic screens</a> keep working.</p></body></html>";
+
+/// The Leptos interface at `/app/`. Unknown paths get its `index.html`.
+fn ui_service(dir: PathBuf) -> Router<AppState> {
+    let index = dir.join("index.html");
+    if !index.is_file() {
+        return Router::new()
+            .route("/app", get(|| async { Html(UI_MISSING) }))
+            .route("/app/", get(|| async { Html(UI_MISSING) }))
+            .route("/app/{*rest}", get(|| async { Html(UI_MISSING) }));
+    }
+    let files = tower_http::services::ServeDir::new(dir)
+        .fallback(tower_http::services::ServeFile::new(index));
+    Router::new()
+        .route(
+            "/app",
+            get(|| async { axum::response::Redirect::permanent("/app/") }),
+        )
+        .nest_service("/app/", files)
+}
+
 fn router(state: AppState) -> Router {
+    router_with_ui(state, ui_dir())
+}
+
+fn router_with_ui(state: AppState, ui: PathBuf) -> Router {
     let protected = Router::new()
         .merge(Router::new().nest("/api", book_routes()))
         .nest("/api/v1", book_routes())
@@ -397,6 +434,7 @@ fn router(state: AppState) -> Router {
                 )
             }),
         )
+        .merge(ui_service(ui))
         .merge(public)
         .merge(protected)
         .with_state(state)

@@ -324,7 +324,7 @@ Level A runs alongside: A1–A3 with L0 · tools grow with L1–L8 · A4 ships a
 | Level | State |
 |---|---|
 | Plan, licence, roadmap | ✅ Done (PR #4) |
-| Level 0 | ⏳ In progress. Done: 0.1–0.7 (workspace, migrations, single writer, `ot-core`, users, roles, sessions, API tokens) and part of 0.8 (every route under `/api/v1`, `{error}` bodies, revision conflicts as 409). Next: 0.9–0.13. Moved to the start of Level 1, where the first new DocTypes need them: 0.2b storage traits, the generic `/api/v1/{doctype}` routes and the generated OpenAPI spec. |
+| Level 0 | ⏳ In progress. Done: 0.1–0.7, 0.9 and 0.10, and part of 0.8. That covers the workspace, migrations, single writer, `ot-core`, and users, roles, sessions and API tokens. From 0.8: every route under `/api/v1`. 0.9 adds the Leptos interface at `/app/` (sign-in, first-user setup, shell, keyboard layer, `FormView`, `ListView`, Day Book), and 0.10 adds GitHub Actions CI and `cargo deny`. Next: 0.11–0.13. Moved to the start of Level 1: 0.2b storage traits, the generic `/api/v1/{doctype}` routes and the OpenAPI spec. |
 | All later levels | Not started |
 
 ## Verification (each level)

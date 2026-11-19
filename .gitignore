@@ -6,3 +6,4 @@
 
 /connectors/mcp/node_modules/
 /connectors/mcp/dist/
+/crates/ot-web/dist/

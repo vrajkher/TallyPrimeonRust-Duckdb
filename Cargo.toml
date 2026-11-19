@@ -1,13 +1,27 @@
 [workspace]
 resolver = "3"
-members = ["crates/ot-core", "crates/ot-store", "crates/ot-server"]
-default-members = ["crates/ot-server", "crates/ot-store", "crates/ot-core"]
+members = [
+    "crates/ot-api-types",
+    "crates/ot-core",
+    "crates/ot-store",
+    "crates/ot-server",
+    "crates/ot-web",
+]
+# ot-web is built for the browser with Trunk; see crates/ot-web.
+default-members = [
+    "crates/ot-server",
+    "crates/ot-store",
+    "crates/ot-core",
+    "crates/ot-api-types",
+]
 
 [workspace.package]
 version = "0.2.0"
 edition = "2024"
 rust-version = "1.90"
 license = "AGPL-3.0-only"
+# Internal crates; the app ships as one binary.
+publish = false
 
 [workspace.dependencies]
 axum = "0.8"

@@ -385,3 +385,88 @@ async fn repeated_wrong_passwords_are_throttled() {
         .await;
     assert_eq!(blocked.status, StatusCode::TOO_MANY_REQUESTS);
 }
+
+#[tokio::test]
+async fn responses_match_the_shared_api_types() {
+    let app = App::new();
+    let setup = app
+        .post(
+            "/api/v1/setup",
+            &[],
+            json!({"username": "asha", "full_name": "Asha Patel", "password": "correct horse battery"}),
+        )
+        .await;
+    let state: ot_api_types::SessionState = serde_json::from_value(setup.body.clone()).unwrap();
+    assert!(state.signed_in && state.csrf_token.is_some());
+    assert_eq!(state.user.unwrap().roles, vec!["system_manager"]);
+    let asha = Browser::from(&setup);
+
+    let expense = app
+        .post(
+            "/api/v1/ledgers",
+            &asha.write(),
+            json!({"name": "Tea", "kind": "general"}),
+        )
+        .await
+        .body["id"]
+        .as_i64()
+        .unwrap();
+    app.post("/api/v1/vouchers", &asha.write(), payment(9, expense))
+        .await;
+    let filter = ot_api_types::DayBookFilter {
+        kind: Some("payment".into()),
+        page: Some(1),
+        ..Default::default()
+    };
+    let reply = app
+        .get(
+            &format!("/api/v1/vouchers?{}", filter.query()),
+            &asha.read(),
+        )
+        .await;
+    let book: ot_api_types::DayBook = serde_json::from_value(reply.body).unwrap();
+    assert_eq!(book.count, 1);
+    assert_eq!(book.rows[0].other_account, "Tea");
+    assert_eq!(
+        ot_api_types::format_paise(&book.rows[0].amount_paise),
+        "250.00"
+    );
+
+    let denied = app.get("/api/v1/users", &[]).await;
+    let error: ot_api_types::ApiErrorBody = serde_json::from_value(denied.body).unwrap();
+    assert_eq!(error.error, "Sign in to OpenTally.");
+}
+
+#[tokio::test]
+async fn the_new_interface_is_served_at_app() {
+    let app = App::new();
+    // Tests run from the crate directory, where no UI has been built.
+    let page = app.get("/app/", &[]).await;
+    assert_eq!(page.status, StatusCode::OK);
+    let built = std::env::temp_dir().join(format!("ot-ui-{}", std::process::id()));
+    std::fs::create_dir_all(&built).unwrap();
+    std::fs::write(built.join("index.html"), "<p>new ui</p>").unwrap();
+    std::fs::write(built.join("app.js"), "1").unwrap();
+    let router = crate::router_with_ui(app.state.clone(), built.clone())
+        .layer(MockConnectInfo(LOCAL.parse::<SocketAddr>().unwrap()));
+    for (uri, expected) in [
+        ("/app/", StatusCode::OK),
+        ("/app/app.js", StatusCode::OK),
+        ("/app/day-book", StatusCode::OK),
+        ("/app", StatusCode::PERMANENT_REDIRECT),
+    ] {
+        let response = router
+            .clone()
+            .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected, "{uri}");
+    }
+    // The classic screens stay at the root.
+    let root = router
+        .oneshot(Request::get("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(root.status(), StatusCode::OK);
+    let _ = std::fs::remove_dir_all(built);
+}

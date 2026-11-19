@@ -1,0 +1,14 @@
+[package]
+name = "ot-api-types"
+description = "OpenTally API request and response types, shared by the server and the WebAssembly UI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

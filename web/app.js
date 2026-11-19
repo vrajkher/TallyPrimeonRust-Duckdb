@@ -780,6 +780,9 @@ window.addEventListener("hashchange", updateNavigation);
 updateNavigation();
 dateField.value = localDate();
 resetJournalLines();
+// The new interface opens voucher entry here with /?voucher=payment#entry.
+const requestedKind = new URLSearchParams(location.search).get("voucher");
+if (["payment", "receipt", "journal", "contra"].includes(requestedKind)) switchKind(requestedKind);
 updatePreview();
 loadLedgers().catch((error) => status("voucher-status", error.message, true));
 void refreshRegister(1);

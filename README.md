@@ -25,6 +25,29 @@ cargo run --locked
 
 The first build compiles the bundled DuckDB library. When the app is running, open [http://127.0.0.1:3000](http://127.0.0.1:3000). Keep the terminal open while you work. Press **Ctrl+C** to stop the app.
 
+### The new interface
+
+OpenTally is moving to a new interface written in Rust with [Leptos](https://leptos.dev) and compiled to WebAssembly. It runs at [http://127.0.0.1:3000/app/](http://127.0.0.1:3000/app/) next to the classic screens, and screens move to it one at a time. It already has sign-in, creating the first user, and the Day Book with date, type and text filters.
+
+Build it once, and again after changing it:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install trunk --locked
+cd crates/ot-web
+trunk build --release
+```
+
+Then start OpenTally from the repository root as usual. Set `OPENTALLY_UI_DIR` to serve a built copy from somewhere else.
+
+| Key | Action |
+| --- | --- |
+| F4, F5, F6, F7 | Contra, Payment, Receipt or Journal entry (on the classic screens for now) |
+| Alt+D | Day Book |
+| / | Search the list |
+| Page Up, Page Down | Previous or next page |
+| Esc | Close a message |
+
 ### Choose a book file, bind address or port
 
 | Setting | Default |
@@ -32,6 +55,7 @@ The first build compiles the bundled DuckDB library. When the app is running, op
 | `OPENTALLY_DB` | `data/vouchers.duckdb`, relative to the starting directory |
 | `OPENTALLY_BIND_ADDR` | `127.0.0.1`. Accepts an IPv4 or IPv6 address without a port. |
 | `OPENTALLY_PORT` | `3000` |
+| `OPENTALLY_UI_DIR` | `crates/ot-web/dist`, relative to the starting directory. Where the built new interface is served from. |
 | `OPENTALLY_SECURE_COOKIES` | Off. Set to `1` when users reach OpenTally over HTTPS, so sign-in cookies are sent only over HTTPS. |
 
 For Docker, set `OPENTALLY_BIND_ADDR=0.0.0.0` inside the container so Kiri can reach OpenTally on the container network. Create the first user before you do this: until a book has users, OpenTally answers only requests from the same computer.
@@ -171,8 +195,10 @@ With write tools enabled, the assistant can post, edit and cancel vouchers, add 
 Stop the app and copy the DuckDB file to back it up. Start the app with `OPENTALLY_DB` pointing to a separate copy to test the restore and compare the Day Book and reports.
 
 ```sh
-cargo test --locked
+cargo test --workspace --locked
 ```
+
+GitHub Actions runs the same checks on every pull request: formatting, Clippy with warnings as errors, all tests, the MCP connector tests against the built app, a release build of the new interface, and a licence check of every dependency with `cargo deny` (see `deny.toml`).
 
 The automated checks cover legacy migration, exact paise arithmetic, balanced and compound postings, XML import and re-import, period locks, auditable revisions, cost categories, and bank matching. The application’s accounting scope is one local book. Site-specific acceptance uses the matching Tally exports and reports for the chosen period.
 

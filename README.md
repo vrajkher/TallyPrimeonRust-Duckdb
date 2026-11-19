@@ -150,6 +150,6 @@ OpenTally is licensed under the [GNU Affero General Public License v3.0 only](LI
 
 If you run a modified OpenTally for users over a network, you must offer them its complete source code.
 
-OpenTally's new features are being ported from [Frappe Books](https://github.com/frappe/frappe-books), © Frappe Technologies Pvt. Ltd., AGPL-3.0. See [NOTICE](NOTICE). OpenTally is not affiliated with or endorsed by Frappe.
+OpenTally's new features are being ported from [Frappe Books](https://github.com/frappe/frappe-books), © Frappe Technologies Pvt. Ltd., AGPL-3.0. Some accounting features are ported from [ERPNext](https://github.com/frappe/erpnext), © Frappe Technologies Pvt. Ltd., GPL-3.0, which may be combined with AGPL-3.0 code. See [NOTICE](NOTICE). OpenTally is not affiliated with or endorsed by Frappe.
 
 The ChatGPT and Claude connector in `connectors/mcp` and the plugin in `plugins/claude` remain under the MIT License. They are separate programs that talk to OpenTally over HTTP.

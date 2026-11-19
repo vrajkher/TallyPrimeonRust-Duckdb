@@ -4,6 +4,8 @@ Status: **draft for review**. No code changes yet.
 
 Decided by the owner: **AGPL-3.0, port Frappe Books with all its capabilities** (option B) and **a Rust UI with Leptos**.
 
+Step-by-step roadmap: **[ROADMAP.md](ROADMAP.md)**. It adds ERPNext as a second source, an AI integration track and the database decision (DuckDB now, PostgreSQL later).
+
 Reference: [frappe/frappe-books `version-16`](https://github.com/frappe/frappe-books/tree/version-16) (Frappe Framework v16 app, Python + Vue, AGPL-3.0) and its [server installation guide](https://docs.frappe.io/books/installation).
 
 ## 1. Goal

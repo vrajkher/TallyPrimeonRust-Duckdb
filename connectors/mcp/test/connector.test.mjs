@@ -67,6 +67,13 @@ test("HTTP configuration requires HTTPS resource discovery and scoped OAuth", ()
   assert.throws(() => configFromEnvironment({ ...oauthEnv, OPENTALLY_MCP_RESOURCE_URL: "http://example.test/mcp" }, "http"), /HTTPS/);
 });
 
+test("an OpenTally API token is passed through for books with users", () => {
+  const token = "ot_" + "a".repeat(64);
+  assert.deepEqual(configFromEnvironment({ OPENTALLY_API_TOKEN: token }, "stdio"), { apiPort: 3000, writes: false, token });
+  assert.deepEqual(configFromEnvironment({ OPENTALLY_API_TOKEN: " " }, "stdio"), { apiPort: 3000, writes: false });
+  assert.throws(() => configFromEnvironment({ OPENTALLY_API_TOKEN: "secret" }, "stdio"), /OPENTALLY_API_TOKEN/);
+});
+
 test("Streamable HTTP advertises both scopes and checks audience, origin and permission before book access", async (t) => {
   const config = configFromEnvironment(oauthEnv, "http");
   const effects = [];

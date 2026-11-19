@@ -15,11 +15,16 @@ default = ["bundled-duckdb"]
 bundled-duckdb = ["ot-store/bundled-duckdb"]
 
 [dependencies]
+argon2 = { version = "0.5", features = ["std"] }
 axum.workspace = true
+getrandom = "0.3"
+ot-core = { path = "../ot-core" }
 ot-store = { path = "../ot-store", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 tokio.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["time"] }
+tower = { version = "0.5", features = ["util"] }

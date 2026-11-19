@@ -3,6 +3,7 @@
 
 #[cfg(test)]
 mod acceptance;
+pub mod auth;
 pub mod bank;
 pub mod imports;
 pub mod migrate;

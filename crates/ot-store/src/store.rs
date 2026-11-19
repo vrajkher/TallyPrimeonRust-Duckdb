@@ -278,6 +278,36 @@ pub struct VoucherChange {
     voucher: Option<NewVoucher>,
 }
 
+impl NewVoucher {
+    /// `payment`, `receipt`, `journal` or `contra`.
+    pub fn kind_key(&self) -> &'static str {
+        match self.entry {
+            VoucherEntry::Payment(_) => "payment",
+            VoucherEntry::Receipt(_) => "receipt",
+            VoucherEntry::Journal { .. } => "journal",
+            VoucherEntry::Contra { .. } => "contra",
+        }
+    }
+}
+
+impl VoucherChange {
+    /// The replacement voucher, or `None` when the change cancels the voucher.
+    pub fn replacement(&self) -> Option<&NewVoucher> {
+        self.voucher.as_ref()
+    }
+
+    /// Records the signed-in user instead of a typed operator name.
+    pub fn set_actor(&mut self, actor: String) {
+        self.actor = actor;
+    }
+}
+
+impl Voucher {
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+}
+
 #[derive(Serialize)]
 pub struct VoucherEvent {
     revision: i32,
@@ -408,6 +438,15 @@ impl Store {
     }
 
     pub fn add_voucher(&mut self, entry: NewVoucher) -> Result<(Voucher, bool), StoreError> {
+        self.add_voucher_by(entry, "Local operator")
+    }
+
+    /// Posts a voucher and records `actor` as the person who posted it.
+    pub fn add_voucher_by(
+        &mut self,
+        entry: NewVoucher,
+        actor: &str,
+    ) -> Result<(Voucher, bool), StoreError> {
         let key = request_key(&entry.request_id)?;
         let tx = self.connection.transaction()?;
         let (kind, mut revision) = prepare_local(&tx, entry)?;
@@ -440,7 +479,7 @@ impl Store {
             Some(&key),
             &revision,
             Audit {
-                actor: "Local operator",
+                actor,
                 action: "posted",
                 reason: "",
             },

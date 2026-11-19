@@ -324,7 +324,7 @@ Level A runs alongside: A1–A3 with L0 · tools grow with L1–L8 · A4 ships a
 | Level | State |
 |---|---|
 | Plan, licence, roadmap | ✅ Done (PR #4) |
-| Level 0 | ⏳ In progress: 0.1–0.6 done (workspace, migrations, single writer, `ot-core` documents, money, series and posting engine); next 0.7–0.8. Step 0.2b (storage traits) is moved to the start of Level 1, where the first new repositories need it. |
+| Level 0 | ⏳ In progress. Done: 0.1–0.7 (workspace, migrations, single writer, `ot-core`, users, roles, sessions, API tokens) and part of 0.8 (every route under `/api/v1`, `{error}` bodies, revision conflicts as 409). Next: 0.9–0.13. Moved to the start of Level 1, where the first new DocTypes need them: 0.2b storage traits, the generic `/api/v1/{doctype}` routes and the generated OpenAPI spec. |
 | All later levels | Not started |
 
 ## Verification (each level)

@@ -101,7 +101,8 @@ h1, h2, h3, p, dl { margin: 0; }
 .icon-register::after { inset: 4px 0 4px; border-top: 1.5px solid; border-bottom: 1.5px solid; }
 .icon-ledger::after { top: 0; bottom: 0; left: 4px; border-left: 1.5px solid; }
 .sidebar-footer { display: flex; align-items: center; gap: 8px; margin: auto 12px 0; color: #bfd6c6; font-size: 12px; }
-.sidebar-footer span { width: 6px; height: 6px; border-radius: 50%; background: #a5dbb1; }
+.sidebar-footer { flex-wrap: wrap; }
+.sidebar-footer > span:first-child { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #a5dbb1; }
 
 .workspace { margin-left: 218px; }
 .topbar {
@@ -346,3 +347,4 @@ dialog::backdrop { background: #10291fc2; }
   .detail-table :is(th, td) { padding-block: 8px; }
   .detail-table tr { break-inside: avoid; }
 }
+.link-button { padding: 0; border: 0; color: inherit; background: none; font: inherit; text-decoration: underline; cursor: pointer; }

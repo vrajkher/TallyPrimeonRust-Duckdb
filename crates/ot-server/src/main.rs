@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod api_tests;
+mod auth;
 mod db;
 
 use std::{
@@ -7,12 +10,13 @@ use std::{
 };
 
 use axum::{
-    Json, Router,
-    extract::{Path, Query, State},
+    Extension, Json, Router,
+    extract::{FromRef, Path, Query, State},
     http::{StatusCode, header},
     response::{Html, IntoResponse, Response},
-    routing::get,
+    routing::{delete, get, post},
 };
+use ot_core::auth::Perm;
 use serde::Serialize;
 
 use ot_store::bank::{
@@ -28,7 +32,14 @@ use ot_store::{
     VoucherChange, VoucherEvent,
 };
 
+use auth::{AppState, AuthError, Identity};
 use db::Database;
+
+impl FromRef<AppState> for Database {
+    fn from_ref(state: &AppState) -> Self {
+        state.db.clone()
+    }
+}
 type ApiResult<T> = Result<T, ApiError>;
 
 struct ApiError(StoreError);
@@ -97,12 +108,14 @@ async fn get_voucher(State(db): State<Database>, Path(id): Path<i64>) -> ApiResu
 
 async fn add_voucher(
     State(db): State<Database>,
+    Extension(identity): Extension<Identity>,
     Json(input): Json<NewVoucher>,
-) -> ApiResult<(StatusCode, Json<Voucher>)> {
+) -> Result<(StatusCode, Json<Voucher>), AuthError> {
+    identity.require(auth::voucher_doctype(input.kind_key()), Perm::Submit)?;
+    let actor = identity.actor();
     let (voucher, created) = db
-        .write(|store| store.add_voucher(input))
-        .await
-        .map_err(ApiError)?;
+        .write(move |store| store.add_voucher_by(input, &actor))
+        .await?;
     let status = if created {
         StatusCode::CREATED
     } else {
@@ -113,13 +126,26 @@ async fn add_voucher(
 
 async fn revise_voucher(
     State(db): State<Database>,
+    Extension(identity): Extension<Identity>,
     Path(id): Path<i64>,
-    Json(input): Json<VoucherChange>,
-) -> ApiResult<Json<Voucher>> {
-    db.write(move |store| store.change_voucher(id, input))
-        .await
-        .map(Json)
-        .map_err(ApiError)
+    Json(mut input): Json<VoucherChange>,
+) -> Result<Json<Voucher>, AuthError> {
+    // Editing needs Amend on both the current and the new kind; cancelling needs Cancel.
+    let current = db.read(move |store| store.voucher(id)).await?;
+    match input.replacement() {
+        Some(replacement) => {
+            identity.require(auth::voucher_doctype(current.kind()), Perm::Amend)?;
+            identity.require(auth::voucher_doctype(replacement.kind_key()), Perm::Amend)?;
+        }
+        None => identity.require(auth::voucher_doctype(current.kind()), Perm::Cancel)?,
+    }
+    if identity.user.is_some() {
+        input.set_actor(identity.actor());
+    }
+    Ok(Json(
+        db.write(move |store| store.change_voucher(id, input))
+            .await?,
+    ))
 }
 
 async fn history(
@@ -292,7 +318,53 @@ async fn bank_undo(
         .map_err(ApiError)
 }
 
-fn router(db: Database) -> Router {
+/// The book's API routes, served at both `/api` and `/api/v1`.
+fn book_routes() -> Router<AppState> {
+    Router::new()
+        .route("/ledgers", get(list_ledgers).post(add_ledger))
+        .route("/vouchers", get(list_vouchers).post(add_voucher))
+        .route("/vouchers/{id}", get(get_voucher))
+        .route("/vouchers/{id}/changes", get(history).post(revise_voucher))
+        .route("/vouchers/{id}/changes/{rev}", get(revision))
+        .route(
+            "/import",
+            axum::routing::post(import_book)
+                .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024)),
+        )
+        .route("/groups", get(groups).post(add_group))
+        .route("/settings", get(settings).post(name_company))
+        .route("/settings/close-period", axum::routing::post(close_period))
+        .route("/ledgers/{id}/openings", axum::routing::post(opening))
+        .route("/reports/trial-balance", get(trial_balance))
+        .route("/reports/ledgers/{id}", get(statement))
+        .route("/reports/cost-centres", get(cost_totals))
+        .route("/reports/cost-centres/postings", get(cost_postings))
+        .route("/bank/{id}", get(bank_review).post(bank_import))
+        .route("/bank/{id}/matches", axum::routing::post(bank_match))
+        .route("/bank/matches/{id}/undo", axum::routing::post(bank_undo))
+        .route("/session/password", post(auth::change_password))
+        .route("/users", get(auth::list_users).post(auth::add_user))
+        .route("/users/{id}", post(auth::change_user))
+        .route("/tokens", get(auth::list_tokens).post(auth::add_token))
+        .route("/tokens/{id}", delete(auth::revoke_token))
+}
+
+fn router(state: AppState) -> Router {
+    let protected = Router::new()
+        .merge(Router::new().nest("/api", book_routes()))
+        .nest("/api/v1", book_routes())
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::guard,
+        ));
+    let public = Router::new()
+        .route(
+            "/api/v1/session",
+            get(auth::session_state)
+                .post(auth::sign_in)
+                .delete(auth::sign_out),
+        )
+        .route("/api/v1/setup", post(auth::setup));
     Router::new()
         .route(
             "/",
@@ -325,37 +397,9 @@ fn router(db: Database) -> Router {
                 )
             }),
         )
-        .route("/api/ledgers", get(list_ledgers).post(add_ledger))
-        .route("/api/vouchers", get(list_vouchers).post(add_voucher))
-        .route("/api/vouchers/{id}", get(get_voucher))
-        .route(
-            "/api/vouchers/{id}/changes",
-            get(history).post(revise_voucher),
-        )
-        .route("/api/vouchers/{id}/changes/{rev}", get(revision))
-        .route(
-            "/api/import",
-            axum::routing::post(import_book)
-                .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024)),
-        )
-        .route("/api/groups", get(groups).post(add_group))
-        .route("/api/settings", get(settings).post(name_company))
-        .route(
-            "/api/settings/close-period",
-            axum::routing::post(close_period),
-        )
-        .route("/api/ledgers/{id}/openings", axum::routing::post(opening))
-        .route("/api/reports/trial-balance", get(trial_balance))
-        .route("/api/reports/ledgers/{id}", get(statement))
-        .route("/api/reports/cost-centres", get(cost_totals))
-        .route("/api/reports/cost-centres/postings", get(cost_postings))
-        .route("/api/bank/{id}", get(bank_review).post(bank_import))
-        .route("/api/bank/{id}/matches", axum::routing::post(bank_match))
-        .route(
-            "/api/bank/matches/{id}/undo",
-            axum::routing::post(bank_undo),
-        )
-        .with_state(db)
+        .merge(public)
+        .merge(protected)
+        .with_state(state)
 }
 
 #[tokio::main]
@@ -389,13 +433,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let db = Database::start(Store::open(&path)?)
         .map_err(|_| "The book's database worker could not start.")?;
+    let secure_cookies = matches!(
+        env::var("OPENTALLY_SECURE_COOKIES").as_deref(),
+        Ok("1" | "true")
+    );
+    let users = db
+        .read(|store| store.user_count())
+        .await
+        .map_err(|_| "The book's users could not be read.")?;
+    if users == 0 && !bind_addr.is_loopback() {
+        println!(
+            "No users exist yet, so only requests from this computer are accepted. \
+             Create the first user before opening OpenTally to the network."
+        );
+    }
     let listener = tokio::net::TcpListener::bind(SocketAddr::new(bind_addr, port)).await?;
     println!("OpenTally is running at http://{}", listener.local_addr()?);
     println!("Database: {}", path.display());
-    axum::serve(listener, router(db))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
+    axum::serve(
+        listener,
+        router(AppState::new(db, secure_cookies))
+            .into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+    .await?;
     Ok(())
 }

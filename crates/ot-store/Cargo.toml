@@ -14,6 +14,7 @@ bundled-duckdb = ["duckdb/bundled"]
 chrono.workspace = true
 csv.workspace = true
 duckdb.workspace = true
+ot-core = { path = "../ot-core" }
 roxmltree.workspace = true
 serde.workspace = true
 serde_json.workspace = true

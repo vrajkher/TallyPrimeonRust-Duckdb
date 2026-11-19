@@ -1,0 +1,387 @@
+//! HTTP tests of sign-in, sessions, roles and API tokens against an in-memory book.
+
+use std::net::SocketAddr;
+
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    extract::connect_info::MockConnectInfo,
+    http::{Method, Request, StatusCode, header},
+};
+use ot_store::Store;
+use serde_json::{Value, json};
+use tower::ServiceExt;
+
+use crate::{auth::AppState, db::Database, router};
+
+const LOCAL: &str = "127.0.0.1:40000";
+const REMOTE: &str = "192.168.1.20:40000";
+
+struct App {
+    state: AppState,
+}
+
+struct Reply {
+    status: StatusCode,
+    cookies: Vec<String>,
+    body: Value,
+}
+
+impl App {
+    fn new() -> Self {
+        let db = Database::start(Store::open_in_memory().unwrap()).unwrap();
+        Self {
+            state: AppState::new(db, false),
+        }
+    }
+
+    fn app(&self, peer: &str) -> Router {
+        router(self.state.clone()).layer(MockConnectInfo(peer.parse::<SocketAddr>().unwrap()))
+    }
+
+    async fn send(
+        &self,
+        peer: &str,
+        method: Method,
+        uri: &str,
+        headers: &[(&str, &str)],
+        body: Option<Value>,
+    ) -> Reply {
+        let mut request = Request::builder().method(method).uri(uri);
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let request = match body {
+            Some(body) => request
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string())),
+            None => request.body(Body::empty()),
+        }
+        .unwrap();
+        let response = self.app(peer).oneshot(request).await.unwrap();
+        let status = response.status();
+        let cookies = response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|v| v.to_str().unwrap().to_owned())
+            .collect();
+        let bytes = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+        let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        Reply {
+            status,
+            cookies,
+            body,
+        }
+    }
+
+    async fn get(&self, uri: &str, headers: &[(&str, &str)]) -> Reply {
+        self.send(LOCAL, Method::GET, uri, headers, None).await
+    }
+
+    async fn post(&self, uri: &str, headers: &[(&str, &str)], body: Value) -> Reply {
+        self.send(LOCAL, Method::POST, uri, headers, Some(body))
+            .await
+    }
+}
+
+/// A signed-in browser: its cookie header and CSRF token.
+struct Browser {
+    cookie: String,
+    csrf: String,
+}
+
+impl Browser {
+    fn from(reply: &Reply) -> Self {
+        let value = |name: &str| {
+            reply
+                .cookies
+                .iter()
+                .find_map(|c| c.strip_prefix(&format!("{name}=")))
+                .and_then(|c| c.split(';').next())
+                .unwrap()
+                .to_owned()
+        };
+        let (session, csrf) = (value("ot_session"), value("ot_csrf"));
+        Self {
+            cookie: format!("ot_session={session}; ot_csrf={csrf}"),
+            csrf,
+        }
+    }
+
+    fn read(&self) -> Vec<(&str, &str)> {
+        vec![("cookie", self.cookie.as_str())]
+    }
+
+    fn write(&self) -> Vec<(&str, &str)> {
+        vec![
+            ("cookie", self.cookie.as_str()),
+            ("x-csrf-token", self.csrf.as_str()),
+        ]
+    }
+}
+
+fn payment(n: u32, other_ledger: i64) -> Value {
+    json!({"kind": "payment", "request_id": format!("29daeb83-d7be-4576-aca0-{n:012}"),
+           "date": "2025-09-03", "amount": "250.00", "cash_ledger_id": 1,
+           "other_ledger_id": other_ledger, "reference": "R", "narration": "Tea"})
+}
+
+fn journal(n: u32) -> Value {
+    json!({"kind": "journal", "request_id": format!("29daeb83-d7be-4576-aca0-{n:012}"),
+           "date": "2025-09-03", "postings": [
+               {"ledger_id": 1, "side": "debit", "amount": "10.00"},
+               {"ledger_id": 2, "side": "credit", "amount": "10.00"}]})
+}
+
+async fn set_up_admin(app: &App) -> Browser {
+    let reply = app
+        .post(
+            "/api/v1/setup",
+            &[],
+            json!({"username": "asha", "full_name": "Asha Patel", "password": "correct horse battery"}),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    assert!(reply.cookies.iter().any(|c| c.contains("HttpOnly")));
+    Browser::from(&reply)
+}
+
+#[tokio::test]
+async fn a_book_without_users_is_open_only_to_this_computer() {
+    let app = App::new();
+    assert_eq!(app.get("/api/ledgers", &[]).await.status, StatusCode::OK);
+    assert_eq!(app.get("/api/v1/ledgers", &[]).await.status, StatusCode::OK);
+    let remote = app
+        .send(REMOTE, Method::GET, "/api/ledgers", &[], None)
+        .await;
+    assert_eq!(remote.status, StatusCode::UNAUTHORIZED);
+    let proxied = app
+        .get("/api/ledgers", &[("x-forwarded-for", "203.0.113.9")])
+        .await;
+    assert_eq!(proxied.status, StatusCode::UNAUTHORIZED);
+    let state = app.get("/api/v1/session", &[]).await;
+    assert_eq!(state.body["setup_required"], true);
+    // The first user can be created only from this computer.
+    let remote_setup = app
+        .send(
+            REMOTE,
+            Method::POST,
+            "/api/v1/setup",
+            &[],
+            Some(json!({"username": "x", "full_name": "X", "password": "correct horse battery"})),
+        )
+        .await;
+    assert_eq!(remote_setup.status, StatusCode::FORBIDDEN);
+    // Unknown API routes are refused, not passed through.
+    assert_eq!(
+        app.get("/api/nothing", &[]).await.status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn after_setup_every_request_needs_a_session_and_changes_need_csrf() {
+    let app = App::new();
+    let asha = set_up_admin(&app).await;
+    assert_eq!(
+        app.get("/api/ledgers", &[]).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        app.get("/api/ledgers", &asha.read()).await.status,
+        StatusCode::OK
+    );
+
+    let ledger = json!({"name": "Office Expenses", "kind": "general"});
+    let no_csrf = app.post("/api/ledgers", &asha.read(), ledger.clone()).await;
+    assert_eq!(no_csrf.status, StatusCode::FORBIDDEN);
+    let created = app.post("/api/ledgers", &asha.write(), ledger).await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+
+    let again = app
+        .post(
+            "/api/v1/setup",
+            &[],
+            json!({"username": "b", "full_name": "B", "password": "correct horse battery"}),
+        )
+        .await;
+    assert_eq!(again.status, StatusCode::CONFLICT);
+
+    let state = app.get("/api/v1/session", &asha.read()).await;
+    assert_eq!(state.body["user"]["username"], "asha");
+    assert_eq!(state.body["csrf_token"], asha.csrf.as_str());
+
+    let out = app
+        .send(LOCAL, Method::DELETE, "/api/v1/session", &asha.read(), None)
+        .await;
+    assert_eq!(out.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        app.get("/api/ledgers", &asha.read()).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn roles_follow_frappe_books_permissions() {
+    let app = App::new();
+    let asha = set_up_admin(&app).await;
+    let expense = app
+        .post(
+            "/api/ledgers",
+            &asha.write(),
+            json!({"name": "Tea", "kind": "general"}),
+        )
+        .await
+        .body["id"]
+        .as_i64()
+        .unwrap();
+    let added = app
+        .post(
+            "/api/v1/users",
+            &asha.write(),
+            json!({"username": "ravi", "full_name": "Ravi Shah",
+                   "password": "another long secret", "roles": ["books_user"]}),
+        )
+        .await;
+    assert_eq!(added.status, StatusCode::CREATED, "{}", added.body);
+
+    let signed_in = app
+        .post(
+            "/api/v1/session",
+            &[],
+            json!({"username": "ravi", "password": "another long secret"}),
+        )
+        .await;
+    assert_eq!(signed_in.status, StatusCode::OK);
+    let ravi = Browser::from(&signed_in);
+
+    // A Books User takes payments and sees the ledgers to pick from.
+    assert_eq!(
+        app.get("/api/ledgers", &ravi.read()).await.status,
+        StatusCode::OK
+    );
+    let paid = app
+        .post("/api/vouchers", &ravi.write(), payment(1, expense))
+        .await;
+    assert_eq!(paid.status, StatusCode::CREATED, "{}", paid.body);
+    let id = paid.body["id"].as_i64().unwrap();
+    let history = app
+        .get(&format!("/api/vouchers/{id}/changes"), &ravi.read())
+        .await;
+    assert_eq!(history.body[0]["actor"], "Ravi Shah (ravi)");
+
+    // ...but not journals, accounts, reports or users.
+    let journal_reply = app.post("/api/vouchers", &ravi.write(), journal(2)).await;
+    assert_eq!(journal_reply.status, StatusCode::FORBIDDEN);
+    let ledger = app
+        .post(
+            "/api/ledgers",
+            &ravi.write(),
+            json!({"name": "X", "kind": "general"}),
+        )
+        .await;
+    assert_eq!(ledger.status, StatusCode::FORBIDDEN);
+    let report = app
+        .get(
+            "/api/reports/trial-balance?from=2025-09-01&to=2025-09-30",
+            &ravi.read(),
+        )
+        .await;
+    assert_eq!(report.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        app.get("/api/v1/users", &ravi.read()).await.status,
+        StatusCode::FORBIDDEN
+    );
+
+    // A manager may post the journal.
+    let manager_journal = app.post("/api/vouchers", &asha.write(), journal(3)).await;
+    assert_eq!(
+        manager_journal.status,
+        StatusCode::CREATED,
+        "{}",
+        manager_journal.body
+    );
+}
+
+#[tokio::test]
+async fn api_tokens_act_for_their_user_within_their_scope() {
+    let app = App::new();
+    let asha = set_up_admin(&app).await;
+    let made = app
+        .post(
+            "/api/v1/tokens",
+            &asha.write(),
+            json!({"name": "Claude", "scope": "read"}),
+        )
+        .await;
+    assert_eq!(made.status, StatusCode::CREATED, "{}", made.body);
+    let secret = made.body["secret"].as_str().unwrap().to_owned();
+    assert!(secret.starts_with("ot_"));
+    let bearer = format!("Bearer {secret}");
+    let auth = [("authorization", bearer.as_str())];
+
+    assert_eq!(app.get("/api/ledgers", &auth).await.status, StatusCode::OK);
+    let report = app
+        .get(
+            "/api/reports/trial-balance?from=2025-09-01&to=2025-09-30",
+            &auth,
+        )
+        .await;
+    assert_eq!(report.status, StatusCode::OK);
+    // A read token cannot post, needs no CSRF header, and cannot mint stronger tokens.
+    let post = app.post("/api/vouchers", &auth, journal(4)).await;
+    assert_eq!(post.status, StatusCode::FORBIDDEN);
+    let stronger = app
+        .post(
+            "/api/v1/tokens",
+            &auth,
+            json!({"name": "More", "scope": "submit"}),
+        )
+        .await;
+    assert_eq!(stronger.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        app.get("/api/v1/users", &auth).await.status,
+        StatusCode::FORBIDDEN
+    );
+
+    let id = made.body["id"].as_i64().unwrap();
+    let revoked = app
+        .send(
+            LOCAL,
+            Method::DELETE,
+            &format!("/api/v1/tokens/{id}"),
+            &asha.write(),
+            None,
+        )
+        .await;
+    assert_eq!(revoked.body["revoked"], true);
+    assert_eq!(
+        app.get("/api/ledgers", &auth).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn repeated_wrong_passwords_are_throttled() {
+    let app = App::new();
+    set_up_admin(&app).await;
+    for _ in 0..5 {
+        let reply = app
+            .post(
+                "/api/v1/session",
+                &[],
+                json!({"username": "asha", "password": "wrong password"}),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+    }
+    let blocked = app
+        .post(
+            "/api/v1/session",
+            &[],
+            json!({"username": "asha", "password": "correct horse battery"}),
+        )
+        .await;
+    assert_eq!(blocked.status, StatusCode::TOO_MANY_REQUESTS);
+}

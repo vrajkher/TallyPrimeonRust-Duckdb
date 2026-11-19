@@ -59,7 +59,8 @@ For manual local setup in any host that accepts a standard MCP server configurat
       "args": ["stdio"],
       "env": {
         "OPENTALLY_PORT": "3000",
-        "OPENTALLY_MCP_WRITES": "0"
+        "OPENTALLY_MCP_WRITES": "0",
+        "OPENTALLY_API_TOKEN": "ot_..."
       }
     }
   }
@@ -67,6 +68,10 @@ For manual local setup in any host that accepts a standard MCP server configurat
 ```
 
 If the host uses a different PATH, give the absolute path to the installed command.
+
+### Books with users
+
+A book without users accepts the connector from the same computer with no token. Once the book has users, set `OPENTALLY_API_TOKEN` (or **OpenTally API token** in Claude Desktop) to a token created in OpenTally. The token acts for the user who created it, and its scope limits it further. A `read` token can use only the read tools. A `draft` token can also create and edit drafts. A `submit` token can also post vouchers, import, close periods and reconcile. Leave out `OPENTALLY_API_TOKEN` for a book without users.
 
 ## ChatGPT and Claude web
 
@@ -77,6 +82,7 @@ The connector validates OAuth access tokens using the identity provider’s RFC 
 | Variable | Meaning |
 | --- | --- |
 | `OPENTALLY_PORT` | Local Rust app port. Default 3000. |
+| `OPENTALLY_API_TOKEN` | OpenTally API token, needed once the book has users. |
 | `OPENTALLY_MCP_PORT` | Local MCP listening port. Default 8787. |
 | `OPENTALLY_MCP_WRITES` | Set to `1` or `true` to enable write tools. |
 | `OPENTALLY_MCP_RESOURCE_URL` | Public HTTPS resource ending in `/mcp`. |

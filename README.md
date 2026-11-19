@@ -32,8 +32,9 @@ The first build compiles the bundled DuckDB library. When the app is running, op
 | `OPENTALLY_DB` | `data/vouchers.duckdb`, relative to the starting directory |
 | `OPENTALLY_BIND_ADDR` | `127.0.0.1`. Accepts an IPv4 or IPv6 address without a port. |
 | `OPENTALLY_PORT` | `3000` |
+| `OPENTALLY_SECURE_COOKIES` | Off. Set to `1` when users reach OpenTally over HTTPS, so sign-in cookies are sent only over HTTPS. |
 
-For Docker, set `OPENTALLY_BIND_ADDR=0.0.0.0` inside the container so Kiri can reach OpenTally on the container network. Keep the accounting port on a trusted network because the OpenTally web interface has no built-in authentication.
+For Docker, set `OPENTALLY_BIND_ADDR=0.0.0.0` inside the container so Kiri can reach OpenTally on the container network. Create the first user before you do this: until a book has users, OpenTally answers only requests from the same computer.
 
 When a book needs a schema upgrade, OpenTally first copies it to `<book>.bak-v<version>` next to the original, then upgrades it. A book upgraded by a newer OpenTally is refused rather than changed.
 
@@ -52,6 +53,35 @@ $env:OPENTALLY_DB = "data/practice.duckdb"
 cargo run --locked
 ```
 
+## Users and sign-in
+
+A new book has no users. Until you create one, OpenTally works as before for requests from the same computer and refuses requests from anywhere else, including requests relayed by a proxy.
+
+Create the first user from the computer that runs OpenTally. That user is a System Manager and is signed in straight away.
+
+```sh
+curl -X POST http://127.0.0.1:3000/api/v1/setup -H 'Content-Type: application/json' \
+  -d '{"username": "asha", "full_name": "Asha Patel", "password": "use a long passphrase"}'
+```
+
+From then on, the web interface asks everyone to sign in, and every API request needs a sign-in session or an API token. Passwords need at least 10 characters. Sign-ins expire after 12 hours, and five wrong passwords for a user name block sign-in for 15 minutes.
+
+Roles follow Frappe Books.
+
+| Role | Can do |
+| --- | --- |
+| `system_manager` | Everything, including users and tokens |
+| `books_manager` | All accounting: accounts, journals, payments, imports, reports, bank reconciliation, settings and period closing |
+| `books_user` | Payments and receipts. No journals, accounts or reports |
+| `books_cashier` | Point of sale (in a later release). Reads payments |
+| `viewer` | Reads and reports everything a Books Manager can, and changes nothing |
+
+A System Manager adds users with `POST /api/v1/users` and changes roles, names, passwords or access with `POST /api/v1/users/{id}`. OpenTally always keeps at least one enabled System Manager. Changing someone's password or roles signs them out everywhere.
+
+API tokens let the ChatGPT and Claude connector, scripts and other tools act for a user. Create one while signed in with `POST /api/v1/tokens` and a body such as `{"name": "Claude", "scope": "read"}`. The response shows the secret, which starts with `ot_`, once. Send it as `Authorization: Bearer ot_...`. A `read` token reads only, `draft` can also create drafts, `submit` can also post, import and reconcile, and `admin` can also manage users. A token never has more rights than its user. Revoke a token with `DELETE /api/v1/tokens/{id}`.
+
+Every API route is available under both `/api` and `/api/v1`. New clients should use `/api/v1`.
+
 ## Record your first voucher
 
 1. Open **Company & import**, enter your company name, and select **Save company**.
@@ -63,7 +93,7 @@ cargo run --locked
 
 - Open **Company & import → Account groups and opening balances** to create groups and record openings with an effective date and source. Enter an opening debit as a positive amount and an opening credit as a negative amount. Use `0.00` for an explicitly confirmed zero.
 - Use **Payment** (F5) for money paid, **Receipt** (F6) for money received, **Journal** (F7) for manual debit and credit entries, or **Contra** for a transfer between distinct cash or bank ledgers. Select **Enter multiple posting lines** for a compound payment or receipt. Add line narration and cost allocations through each line’s details. Review the debit and credit totals, then save with **Ctrl+Enter**.
-- Open **Day Book** to search by type, status, dates, voucher number, or ledger. Open the voucher number to print or inspect its history. Edit or cancel an open-period local voucher using an operator name and reason. The operator name is entered by the local user. Edit and cancel preserve the prior revisions. Updates to imported vouchers come through a later source revision.
+- Open **Day Book** to search by type, status, dates, voucher number, or ledger. Open the voucher number to print or inspect its history. Edit or cancel an open-period local voucher using an operator name and reason. In a book with users, OpenTally records the signed-in user as the operator. In a book without users, the operator name is what the local user types. Edit and cancel preserve the prior revisions. Updates to imported vouchers come through a later source revision.
 - Run **Trial Balance**, **Ledger statement**, or **Cost centres** for a date range. Trial Balance uses the latest confirmed opening on or before the start date, then applies posted movements to that opening. When opening evidence is missing, OpenTally shows the movement and marks the balances unconfirmed.
 - Close a reviewed period from **Company & import** to prevent subsequent postings or revisions through its closing date.
 

@@ -19,15 +19,22 @@ pub struct Migration {
 }
 
 /// The DuckDB migrations, oldest first. Append new versions; never edit applied ones.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial",
-    parts: &[
-        include_str!("../migrations/duckdb/0001_initial/1_legacy.sql"),
-        include_str!("../migrations/duckdb/0001_initial/2_schema.sql"),
-        include_str!("../migrations/duckdb/0001_initial/3_upgrade_voucher_desk.sql"),
-    ],
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial",
+        parts: &[
+            include_str!("../migrations/duckdb/0001_initial/1_legacy.sql"),
+            include_str!("../migrations/duckdb/0001_initial/2_schema.sql"),
+            include_str!("../migrations/duckdb/0001_initial/3_upgrade_voucher_desk.sql"),
+        ],
+    },
+    Migration {
+        version: 2,
+        name: "auth",
+        parts: &[include_str!("../migrations/duckdb/0002_auth/1_users.sql")],
+    },
+];
 
 impl Migration {
     /// FNV-1a over the SQL parts, as 16 hex digits. It detects edits, not tampering.
@@ -220,7 +227,7 @@ mod tests {
     #[test]
     fn fresh_book_applies_all_then_nothing() {
         let mut connection = Connection::open_in_memory().unwrap();
-        assert_eq!(migrate(&mut connection).unwrap(), vec![1]);
+        assert_eq!(migrate(&mut connection).unwrap(), vec![1, 2]);
         assert!(migrate(&mut connection).unwrap().is_empty());
         let (name, checksum): (String, String) = connection
             .query_row(
@@ -242,9 +249,11 @@ mod tests {
             .unwrap();
         assert!(migrate(&mut connection).unwrap().is_empty());
         let checksum: String = connection
-            .query_row("SELECT checksum FROM schema_migrations", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT checksum FROM schema_migrations WHERE version = 1",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(checksum, MIGRATIONS[0].checksum());
     }
@@ -295,7 +304,7 @@ mod tests {
         let mut connection = Connection::open(&path).unwrap();
         migrate(&mut connection).unwrap();
         drop(connection);
-        assert_eq!(file_version(&path).unwrap(), 1);
+        assert_eq!(file_version(&path).unwrap(), 2);
         assert_eq!(backup_before_migrating(&path).unwrap(), None);
     }
 }

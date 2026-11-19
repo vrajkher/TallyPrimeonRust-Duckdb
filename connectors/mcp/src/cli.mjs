@@ -14,7 +14,7 @@ async function start() {
   if (args.length > 1 || !["stdio", "http"].includes(mode)) throw new Error("Usage: opentally-mcp [stdio|http]");
   const config = configFromEnvironment(process.env, mode);
   if (mode === "stdio") {
-    const server = createServer({ api: createApi(config.apiPort), writes: config.writes });
+    const server = createServer({ api: createApi(config.apiPort, config.token), writes: config.writes });
     await server.connect(new StdioServerTransport());
     process.stdin.once("end", () => { void server.close(); });
     return;

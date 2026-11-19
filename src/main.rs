@@ -7,7 +7,7 @@ mod store;
 
 use std::{
     env, fs,
-    net::{Ipv4Addr, SocketAddrV4},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -351,9 +351,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = env::var("OPENTALLY_PORT")
         .or_else(|_| env::var("VOUCHER_PORT"))
         .map_or(Ok(3000), |port| port.parse::<u16>())?;
+    let bind_addr = match env::var("OPENTALLY_BIND_ADDR") {
+        Ok(addr) => addr
+            .parse::<IpAddr>()
+            .map_err(|err| format!("Invalid OPENTALLY_BIND_ADDR {addr:?}: {err}"))?,
+        Err(env::VarError::NotPresent) => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        Err(err) => return Err(format!("Cannot read OPENTALLY_BIND_ADDR: {err}").into()),
+    };
     let db = Arc::new(Mutex::new(Store::open(&path)?));
-    let listener =
-        tokio::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).await?;
+    let listener = tokio::net::TcpListener::bind(SocketAddr::new(bind_addr, port)).await?;
     println!("OpenTally is running at http://{}", listener.local_addr()?);
     println!("Database: {}", path.display());
     axum::serve(listener, router(db))

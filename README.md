@@ -25,12 +25,15 @@ cargo run --locked
 
 The first build compiles the bundled DuckDB library. When the app is running, open [http://127.0.0.1:3000](http://127.0.0.1:3000). Keep the terminal open while you work. Press **Ctrl+C** to stop the app.
 
-### Choose a book file or port
+### Choose a book file, bind address or port
 
 | Setting | Default |
 | --- | --- |
 | `OPENTALLY_DB` | `data/vouchers.duckdb`, relative to the starting directory |
+| `OPENTALLY_BIND_ADDR` | `127.0.0.1`. Accepts an IPv4 or IPv6 address without a port. |
 | `OPENTALLY_PORT` | `3000` |
+
+For Docker, set `OPENTALLY_BIND_ADDR=0.0.0.0` inside the container so Kiri can reach OpenTally on the container network. Keep the accounting port on a trusted network because the OpenTally web interface has no built-in authentication.
 
 The previous `VOUCHER_DB` and `VOUCHER_PORT` settings are accepted. The default path also matches Voucher Desk. When OpenTally first opens an existing file, it migrates vouchers to ordered posting lines while preserving their IDs and numbers. Use OpenTally to post new entries after migrating a book.
 

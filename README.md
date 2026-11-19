@@ -143,3 +143,13 @@ cargo test --locked
 ```
 
 The automated checks cover legacy migration, exact paise arithmetic, balanced and compound postings, XML import and re-import, period locks, auditable revisions, cost categories, and bank matching. The application’s accounting scope is one local book. Site-specific acceptance uses the matching Tally exports and reports for the chosen period.
+
+## License
+
+OpenTally is licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`). Releases before this change were published under the MIT License and remain available under it.
+
+If you run a modified OpenTally for users over a network, you must offer them its complete source code.
+
+OpenTally's new features are being ported from [Frappe Books](https://github.com/frappe/frappe-books), © Frappe Technologies Pvt. Ltd., AGPL-3.0. See [NOTICE](NOTICE). OpenTally is not affiliated with or endorsed by Frappe.
+
+The ChatGPT and Claude connector in `connectors/mcp` and the plugin in `plugins/claude` remain under the MIT License. They are separate programs that talk to OpenTally over HTTP.

@@ -2,7 +2,7 @@
 
 Status: **draft for review**. No code changes yet.
 
-Decided by the owner: **MIT, own code** (option A) and **a Rust UI with Leptos**.
+Decided by the owner: **AGPL-3.0, port Frappe Books with all its capabilities** (option B) and **a Rust UI with Leptos**.
 
 Reference: [frappe/frappe-books `version-16`](https://github.com/frappe/frappe-books/tree/version-16) (Frappe Framework v16 app, Python + Vue, AGPL-3.0) and its [server installation guide](https://docs.frappe.io/books/installation).
 
@@ -15,20 +15,26 @@ Grow OpenTally from a voucher/ledger book into a full small-business accounting 
 - immutable revision history, period closing, bank reconciliation,
 - the MCP connector for ChatGPT and Claude.
 
-We port **behaviour**, not the Frappe Framework. There is no bench, MariaDB, Redis or Python in the result.
+We port **all of Frappe Books' capabilities** — its domain logic, rules, data files and tests — but not the Frappe Framework itself. There is no bench, MariaDB, Redis or Python in the result.
 
-## 2. Decision needed first: licence
+## 2. Licence (decided: option B)
 
-Frappe Books is **AGPL-3.0-only**; OpenTally is **MIT**. Translating Frappe's Python/TypeScript, DocType JSON, chart-of-accounts files, translations or UI assets line by line produces a derivative work that must be AGPL.
+Frappe Books is **AGPL-3.0-only**; OpenTally was **MIT**. Translating Frappe's Python/TypeScript, DocType JSON, chart-of-accounts files, translations or UI assets line by line produces a derivative work that must be AGPL.
 
 | Option | Consequence |
 | --- | --- |
-| **A. Clean reimplementation (recommended)** | Use Frappe Books only as a functional spec: feature list, user docs, observed behaviour, accounting rules that are general knowledge. Write our own schema and code. OpenTally stays MIT. |
-| B. Relicense OpenTally to AGPL-3.0 | We may port code and data files directly. Every network user of a hosted OpenTally is entitled to its source. |
+| A. Clean reimplementation | Use Frappe Books only as a functional spec: feature list, user docs, observed behaviour, accounting rules that are general knowledge. Write our own schema and code. OpenTally stays MIT. |
+| **B. Relicense OpenTally to AGPL-3.0 (chosen)** | We may port code and data files directly. Every network user of a hosted OpenTally is entitled to its source. |
 
-Also: do not use the "Frappe" name or logo in the product.
+OpenTally is now `AGPL-3.0-only` (`LICENSE`, `Cargo.toml`, `NOTICE`). Releases before the change stay available under MIT. The MCP connector and Claude plugin stay MIT because they are separate programs that use the HTTP API.
 
-The rest of this plan assumes **option A**.
+Rules that follow from this:
+
+- **Mark derived files.** Each Rust file translated from Frappe Books starts with a header naming the Frappe Books source files it is based on and saying it was modified.
+- **Reuse the data files.** We may adapt Frappe's chart-of-accounts templates, translations (20 locales, including `gu.po` Gujarati and `hi.po` Hindi), print formats and GSTR JSON mapping, keeping their copyright notices.
+- **Port their tests.** Frappe's ~12k lines of integration tests become Rust tests and act as the acceptance suite for parity.
+- **Offer the source.** The app shows a "Source code" link to every user (AGPL §13).
+- **Respect the trademark.** Do not use the "Frappe" name or logo as our product name or branding.
 
 ## 3. What exists today
 
@@ -128,7 +134,7 @@ Each phase ends with passing `cargo test`, extended acceptance tests (`src/accep
 - Line calc: qty × rate, item and invoice discount, tax templates, rounding, grand total, outstanding.
 - Payment allocation to invoices; advances; outstanding and status (Unpaid / Partly Paid / Paid / Overdue / Return).
 - Posting rules in `ot-core` with exhaustive unit tests (sale, purchase, return, discount, tax, round-off).
-- 2b: multi-currency with exchange-rate gain/loss.
+- Multi-currency (party currency, exchange rate, base amounts, exchange gain/loss), as Frappe Books does.
 
 ### Phase 3 — Financial reports and dashboard
 - General Ledger (filters: account, party, voucher, dates), Profit & Loss, Balance Sheet (periodic columns), Trial Balance on the new tree, receivables/payables ageing, dashboard (cash, sales, expenses, top parties).
@@ -153,6 +159,13 @@ Each phase ends with passing `cargo test`, extended acceptance tests (`src/accep
 - Price lists, pricing rules, coupons, loyalty programmes.
 - POS profile, opening/closing shift with cash denominations, barcode lookup, fast checkout screen.
 
+### Phase 7b — Remaining Frappe Books capabilities
+- Leads and Item Enquiry; Swiss regional fields.
+- Custom Fields and Custom Forms.
+- Translations: load Frappe's `.po` files (Gujarati and Hindi first) into the Leptos UI.
+- Phone layout with bottom tabs and an installable PWA, as Frappe Books' phone app.
+- Parity check: every Frappe Books DocType and report in §4 is implemented and its ported tests pass.
+
 ### Phase 8 — Server deployment
 - `deploy/Dockerfile` (multi-stage, static binary + bundled DuckDB), `docker-compose.yml`, systemd unit.
 - TLS via Caddy or nginx reverse proxy; `OPENTALLY_BIND_ADDR=0.0.0.0` only behind it.
@@ -161,10 +174,12 @@ Each phase ends with passing `cargo test`, extended acceptance tests (`src/accep
 
 ## 7. Difficulties to expect
 
-### Staying MIT
-- **No copying.** Do not paste or translate Frappe code, DocType JSON, chart-of-accounts files, print formats or translations. General accounting rules (balanced entries, round-off, FIFO) are ideas and free to use; their expression is not.
-- **Write our own data.** Build the Indian chart from Tally's primary groups and Schedule III, and the GST rules and GSTR-1 JSON from the GSTN public specs.
-- **Check dependencies.** Run `cargo deny` in CI so no GPL or AGPL crate slips in. Leptos, axum and DuckDB are MIT.
+### AGPL obligations
+- **Track every port.** Every derived file needs its source header, and `NOTICE` must stay accurate.
+- **Python and Vue are not Rust.** We translate logic and tests, not run them. Frappe relies on framework features (DocType meta, hooks, permissions, naming, `docstatus`) that we must provide ourselves in Rust.
+- **Follow upstream.** Frappe Books keeps changing. Record the upstream commit each port is based on (`953e9b4` on `version-16` for this plan) so later fixes can be pulled across.
+- **Check dependencies.** Run `cargo deny` in CI to allow only AGPL-compatible crates (MIT, Apache-2.0, BSD, MPL-2.0 and similar). Leptos, axum and DuckDB are fine.
+- **No closed-source edition.** Anyone who uses a hosted OpenTally may ask for its source, including our changes.
 
 ### Leptos
 - **Two build targets.** The UI compiles to `wasm32`, so anything it shares with the server must avoid DuckDB, tokio and file I/O. Getting the crate split right in phase 0 prevents a lot of `cfg` noise later.
@@ -192,13 +207,13 @@ Each phase ends with passing `cargo test`, extended acceptance tests (`src/accep
 
 ### Server
 - **Security.** The app has no login today. Login, roles, CSRF protection, secure cookies and TLS through a reverse proxy are needed before anyone exposes it on a network.
-- **Scope.** This is a lot of work for a small team, so ship phases 0–3 first.
+- **Scope.** Full parity is a lot of work for a small team. Phases 0–3 still make the first usable release; later phases follow in order.
 
 ## 8. Risks
 
 | Risk | Mitigation |
 | --- | --- |
-| AGPL contamination | Option A rules in §2; review PRs for copied code/data. |
+| Missing attribution on ported code | Source headers and `NOTICE` reviewed in every PR. |
 | DuckDB is analytics-first; many small writes | Batch each document in one transaction; single writer; benchmark 100k vouchers early (phase 0). |
 | One process per DB file | Fine for SMB; document that horizontal scaling is out of scope. |
 | Revision model vs. Frappe's reversal entries | Decided: keep revisions; reports already read current revisions. |
@@ -206,7 +221,8 @@ Each phase ends with passing `cargo test`, extended acceptance tests (`src/accep
 
 ## 9. Open questions for the owner
 
-1. ~~Licence~~: MIT, own code.
+1. ~~Licence~~: AGPL-3.0, port Frappe Books.
 2. ~~UI~~: Leptos.
-3. Multi-currency in phase 2 or defer?
-4. Which phase is the first release target — after phase 3 (accounting server) or after phase 5 (with inventory)?
+3. ~~Multi-currency~~: in phase 2, as part of full capability.
+4. ~~Scope~~: all Frappe Books capabilities (phases 0–8, including 7b).
+5. First release: after phase 3 (accounting server) unless the owner prefers to wait for inventory (phase 5).

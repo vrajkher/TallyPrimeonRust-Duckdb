@@ -1,0 +1,17 @@
+OpenTally
+Copyright (c) 2026 vrajkher
+
+Licensed under the GNU Affero General Public License, version 3 only.
+See LICENSE.
+
+This project includes work derived from Frappe Books
+(https://github.com/frappe/frappe-books, branch version-16),
+Copyright (c) Frappe Technologies Pvt. Ltd., licensed under AGPL-3.0-only.
+Derived work is translated from Python and TypeScript to Rust and modified.
+Each derived source file says which Frappe Books files it is based on.
+
+"Frappe" and "Frappe Books" are trademarks of Frappe Technologies Pvt. Ltd.
+OpenTally is not affiliated with or endorsed by Frappe Technologies.
+
+Components under other licences:
+- connectors/mcp and plugins/claude: MIT License (see connectors/mcp/LICENSE).

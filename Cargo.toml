@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/ot-store", "crates/ot-server"]
-default-members = ["crates/ot-server", "crates/ot-store"]
+members = ["crates/ot-core", "crates/ot-store", "crates/ot-server"]
+default-members = ["crates/ot-server", "crates/ot-store", "crates/ot-core"]
 
 [workspace.package]
 version = "0.2.0"

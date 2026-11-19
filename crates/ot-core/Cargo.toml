@@ -1,0 +1,11 @@
+[package]
+name = "ot-core"
+description = "OpenTally accounting rules: money, documents, number series and ledger posting"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+rust_decimal = { version = "1.43", default-features = false, features = ["std"] }
+serde.workspace = true

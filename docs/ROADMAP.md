@@ -55,7 +55,7 @@ This roadmap breaks the work into **10 levels**, plus an **AI integration track 
 | 0.2b | Storage abstraction | `ot-store` exposes repository traits (`Ledgers`, `Documents`, `Postings`, `Reports`, `Auth`) with a `DuckDbStore` implementation. Rules: no DuckDB-only SQL outside `reports/` and `analytics/`. Use `BIGINT`/`DECIMAL` money, avoid `HUGEINT` in tables, use standard `UUID`/`TIMESTAMP`, and use sequences in place of DuckDB-specific defaults. The migration runner keeps a `duckdb/` and later a `postgres/` folder. | Traits used by the server; a lint test rejects banned SQL in shared files |
 | 0.3 | Single writer | Replace `Arc<Mutex<Store>>` with a writer task (tokio mpsc) plus a read connection pool (`Connection::try_clone`). `run_db` keeps its signature. | Concurrent read requests do not block one another |
 | 0.4 | Document framework | `ot-core::doc`: `DocStatus {Draft, Submitted, Cancelled}`, `NamingSeries`, `LinkedEntries`, a set-once field check. Port from `frappe_books/series.py`, `status.py`, `linked_entries.py`. | Unit tests |
-| 0.5 | Money and currency | `ot-core::money`: `Money(i128 minor units)`, `Currency { code, precision }`, `round_half_even`. Port `accounting/money.py`, `currency.py`. | `test_currency.py` cases ported and passing |
+| 0.5 | Money and currency | `ot-core::money`: `Money(i128 minor units)`, `Currency { code, precision }`, rounding half away from zero (Frappe's `ROUND_HALF_UP`). Port `accounting/money.py`, `currency.py`. | `test_currency.py` cases ported and passing |
 | 0.6 | Posting engine | `ot-core::ledger::LedgerPosting` with `debit`/`credit`/`post`, per-line rounding and a round-off line limited to ½ unit per line. Port `accounting/ledger.py`. Keep OpenTally's revision rule for cancel (no reversal rows). | `test_ledger.py` ported and passing |
 | 0.7 | Auth and roles | Tables `users`, `roles`, `user_roles`, `sessions`, `api_tokens`. Argon2 password hashing, HTTP-only cookie, CSRF header, first-run admin setup. Route guard by role. Port role rules from `permissions.py`. MCP uses an API token. | Unauthenticated requests get 401; `test_permissions.py` core cases pass |
 | 0.8 | API v1 conventions | `/api/v1/{doctype}` list/get/insert/update/submit/cancel. Errors as `{error, field}`. Optimistic `revision` check returns 409. `utoipa` OpenAPI at `/api/v1/openapi.json`. The old `/api/*` routes stay until Level 3. | OpenAPI is generated; the old UI still works |
@@ -324,7 +324,7 @@ Level A runs alongside: A1–A3 with L0 · tools grow with L1–L8 · A4 ships a
 | Level | State |
 |---|---|
 | Plan, licence, roadmap | ✅ Done (PR #4) |
-| Level 0 | ⏳ In progress: 0.1 workspace, 0.2 migration runner and 0.3 single writer done; 0.2b moves to the next PR with `ot-core` |
+| Level 0 | ⏳ In progress: 0.1–0.6 done (workspace, migrations, single writer, `ot-core` documents, money, series and posting engine); next 0.7–0.8. Step 0.2b (storage traits) is moved to the start of Level 1, where the first new repositories need it. |
 | All later levels | Not started |
 
 ## Verification (each level)

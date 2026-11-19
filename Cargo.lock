@@ -1235,6 +1235,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ot-core"
+version = "0.2.0"
+dependencies = [
+ "rust_decimal",
+ "serde",
+]
+
+[[package]]
 name = "ot-store"
 version = "0.2.0"
 dependencies = [

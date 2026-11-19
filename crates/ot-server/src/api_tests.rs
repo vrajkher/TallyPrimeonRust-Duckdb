@@ -470,3 +470,246 @@ async fn the_new_interface_is_served_at_app() {
     assert_eq!(root.status(), StatusCode::OK);
     let _ = std::fs::remove_dir_all(built);
 }
+
+/// One JSON-RPC call to `/mcp`, as an MCP client sends it.
+async fn mcp(
+    app: &App,
+    peer: &str,
+    headers: &[(&str, &str)],
+    method: &str,
+    params: Value,
+) -> Reply {
+    let mut all = vec![
+        ("host", "127.0.0.1:3000"),
+        ("accept", "application/json, text/event-stream"),
+        ("mcp-protocol-version", "2025-06-18"),
+    ];
+    all.extend_from_slice(headers);
+    app.send(
+        peer,
+        Method::POST,
+        "/mcp",
+        &all,
+        Some(json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn mcp_offers_the_node_connector_catalogue() {
+    let app = App::new();
+    let init = mcp(&app, LOCAL, &[], "initialize", json!({
+        "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}
+    }))
+    .await;
+    assert_eq!(init.status, StatusCode::OK, "{}", init.body);
+    for capability in ["tools", "resources", "prompts", "completions"] {
+        assert!(
+            init.body["result"]["capabilities"][capability].is_object(),
+            "{capability}"
+        );
+    }
+
+    let read_only = mcp(&app, LOCAL, &[], "tools/list", json!({})).await;
+    let tools = read_only.body["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 13);
+    assert!(
+        tools
+            .iter()
+            .all(|t| t["annotations"]["readOnlyHint"] == true)
+    );
+    let trial = tools.iter().find(|t| t["name"] == "trial_balance").unwrap();
+    assert_eq!(
+        trial["_meta"]["ui"]["resourceUri"],
+        "ui://opentally/trial-balance-v1.html"
+    );
+    let all = mcp(
+        &app,
+        LOCAL,
+        &[("x-opentally-mcp-writes", "1")],
+        "tools/list",
+        json!({}),
+    )
+    .await;
+    assert_eq!(all.body["result"]["tools"].as_array().unwrap().len(), 25);
+
+    // A write tool is unavailable without the writes header; bad arguments are refused.
+    let closed = mcp(
+        &app,
+        LOCAL,
+        &[],
+        "tools/call",
+        json!({"name": "close_period",
+        "arguments": {"through": "2025-09-30", "actor": "T", "reason": "T"}}),
+    )
+    .await;
+    assert_eq!(closed.body["result"]["isError"], true);
+    let invalid = mcp(
+        &app,
+        LOCAL,
+        &[],
+        "tools/call",
+        json!({"name": "trial_balance",
+        "arguments": {"from": "invalid", "to": "2025-09-30"}}),
+    )
+    .await;
+    assert_eq!(invalid.body["result"]["isError"], true);
+    assert!(
+        invalid.body["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("from. Invalid format.")
+    );
+    let company = mcp(
+        &app,
+        LOCAL,
+        &[],
+        "tools/call",
+        json!({"name": "get_company", "arguments": {}}),
+    )
+    .await;
+    assert_eq!(
+        company.body["result"]["structuredContent"]["company_name"],
+        "Local book"
+    );
+
+    let resources = mcp(&app, LOCAL, &[], "resources/list", json!({})).await;
+    assert_eq!(
+        resources.body["result"]["resources"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    let guide = mcp(
+        &app,
+        LOCAL,
+        &[],
+        "resources/read",
+        json!({"uri": "opentally://guide/accounting"}),
+    )
+    .await;
+    assert!(
+        guide.body["result"]["contents"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("INR company")
+    );
+    let widget = mcp(
+        &app,
+        LOCAL,
+        &[],
+        "resources/read",
+        json!({"uri": "ui://opentally/trial-balance-v1.html"}),
+    )
+    .await;
+    assert_eq!(
+        widget.body["result"]["contents"][0]["mimeType"],
+        "text/html;profile=mcp-app"
+    );
+
+    let prompts = mcp(&app, LOCAL, &[], "prompts/list", json!({})).await;
+    assert_eq!(
+        prompts.body["result"]["prompts"].as_array().unwrap().len(),
+        3
+    );
+    let prompt = mcp(
+        &app,
+        LOCAL,
+        &[],
+        "prompts/get",
+        json!({"name": "review_period",
+        "arguments": {"from": "2025-09-01", "to": "2025-09-30"}}),
+    )
+    .await;
+    assert!(
+        prompt.body["result"]["messages"][0]["content"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("from = 2025-09-01")
+    );
+    let bad_prompt = mcp(
+        &app,
+        LOCAL,
+        &[],
+        "prompts/get",
+        json!({"name": "review_period",
+        "arguments": {"from": "x", "to": "2025-09-30"}}),
+    )
+    .await;
+    assert!(bad_prompt.body["error"].is_object());
+    let completion = mcp(&app, LOCAL, &[], "completion/complete", json!({
+        "ref": {"type": "ref/prompt", "name": "review_period"}, "argument": {"name": "from", "value": ""}})).await;
+    let first = completion.body["result"]["completion"]["values"][0]
+        .as_str()
+        .unwrap();
+    assert!(first.len() == 10 && first.ends_with("-01"), "{first}");
+}
+
+#[tokio::test]
+async fn mcp_uses_the_callers_rights() {
+    let app = App::new();
+    // Without users only this computer may connect, and only by an allowed host name.
+    let remote = mcp(&app, REMOTE, &[], "tools/list", json!({})).await;
+    assert_eq!(remote.status, StatusCode::UNAUTHORIZED);
+    let rebinding = app
+        .send(
+            LOCAL,
+            Method::POST,
+            "/mcp",
+            &[
+                ("host", "attacker.example"),
+                ("accept", "application/json, text/event-stream"),
+            ],
+            Some(json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})),
+        )
+        .await;
+    assert_ne!(rebinding.status, StatusCode::OK);
+
+    let asha = set_up_admin(&app).await;
+    assert_eq!(
+        mcp(&app, LOCAL, &[], "tools/list", json!({})).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    let made = app
+        .post(
+            "/api/v1/tokens",
+            &asha.write(),
+            json!({"name": "Claude", "scope": "read"}),
+        )
+        .await;
+    let bearer = format!("Bearer {}", made.body["secret"].as_str().unwrap());
+    let auth = [
+        ("authorization", bearer.as_str()),
+        ("x-opentally-mcp-writes", "1"),
+    ];
+    let read = mcp(
+        &app,
+        LOCAL,
+        &auth,
+        "tools/call",
+        json!({"name": "list_ledgers", "arguments": {}}),
+    )
+    .await;
+    assert_eq!(
+        read.body["result"]["structuredContent"]["rows"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    // A read token may see the write tools but not use them.
+    let write = mcp(
+        &app,
+        LOCAL,
+        &auth,
+        "tools/call",
+        json!({"name": "set_company_name", "arguments": {"name": "X"}}),
+    )
+    .await;
+    assert_eq!(write.body["result"]["isError"], true);
+    assert_eq!(
+        write.body["result"]["content"][0]["text"],
+        "Your role does not allow this action."
+    );
+}

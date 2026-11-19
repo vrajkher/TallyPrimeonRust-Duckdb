@@ -346,6 +346,22 @@ impl Store {
         Ok(Self { connection })
     }
 
+    /// The newest schema migration applied to this book.
+    pub fn schema_version(&self) -> Result<i32, StoreError> {
+        Ok(self.connection.query_row(
+            "SELECT coalesce(max(version), 0) FROM schema_migrations",
+            [],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Writes everything in the write-ahead log into the book file, so a plain file
+    /// copy is a complete backup.
+    pub fn checkpoint(&self) -> Result<(), StoreError> {
+        self.connection.execute_batch("CHECKPOINT")?;
+        Ok(())
+    }
+
     /// Another connection to the same open book, for concurrent reads.
     /// It shares the database instance, so it sees every committed write.
     pub fn reader(&self) -> Result<Self, StoreError> {

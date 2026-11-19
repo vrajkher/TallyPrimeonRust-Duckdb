@@ -146,7 +146,47 @@ bank-tx-001,2025-09-03,-125.50,REF-001,Travel payment
 
 Use a stable statement transaction ID, an ISO date, a positive amount for deposits, and a negative amount for withdrawals. Select one or more statement lines and the matching ledger postings. A reviewed match requires equal signed totals. Undo a match with an operator name and reason before editing a matched voucher.
 
+## Command line
+
+The `opentally` program also looks after a book directly. Stop the server first, because DuckDB lets one program at a time open a book for writing. Every command accepts `--db FILE` and `--json`, and exits with a fixed code: 0 for success, 2 for a usage error, 3 for invalid input, 4 for a conflict, 5 when something is missing, and 6 when the book is open in another program.
+
+| Command | What it does |
+| --- | --- |
+| `opentally` or `opentally serve` | Start the server |
+| `opentally migrate` | Upgrade the book's schema, keeping a backup first |
+| `opentally info` | Company, schema version and number of users |
+| `opentally user add NAME --name "Full Name" --role ROLE` | Add a user; the password is read from standard input |
+| `opentally user list` / `user set NAME [--role ...] [--disable] [--password]` | List or change users |
+| `opentally token create --user NAME --name LABEL --scope read` | Create an API token; the secret is shown once |
+| `opentally token list` / `token revoke ID` | List or revoke tokens |
+| `opentally backup FILE` / `restore FILE --yes` | Copy the book, or replace it from a copy (the old book is kept as `<book>.before-restore`) |
+| `opentally mcp` | Run the MCP server for Claude and other MCP clients (see below) |
+
+For example, to add the first user from a script:
+
+```sh
+printf '%s\n' "$PASSWORD" | opentally user add asha --name "Asha Patel" --role system_manager
+```
+
 ## ChatGPT and Claude
+
+OpenTally has a built-in MCP server at `/mcp` (Streamable HTTP), with the same 25 tools, prompts, guides and Trial Balance view as the Node connector. Tools run inside OpenTally with the caller's own rights: send an API token as `Authorization: Bearer ot_...` once the book has users. Write tools appear only when the client sends `x-opentally-mcp-writes: 1`. Requests must use a loopback host name, or one listed in `OPENTALLY_MCP_ALLOWED_HOSTS`.
+
+For clients that start a local command, such as Claude Desktop and Claude Code, `opentally mcp` relays standard input and output to a running OpenTally. It reads `OPENTALLY_PORT`, `OPENTALLY_API_TOKEN` and `OPENTALLY_MCP_WRITES`, like the Node connector:
+
+```json
+{
+  "mcpServers": {
+    "opentally": {
+      "command": "opentally",
+      "args": ["mcp"],
+      "env": { "OPENTALLY_PORT": "3000", "OPENTALLY_MCP_WRITES": "0" }
+    }
+  }
+}
+```
+
+The Node connector below keeps working and will be retired once the Rust server has replaced it everywhere, including the Claude Desktop extension.
 
 Start the OpenTally accounting app before using the connector. Building the connector or plugins from source requires [Node.js 20.3 or newer](https://nodejs.org/) and npm. Use the same local app port in the connector if you changed `OPENTALLY_PORT`.
 

@@ -22,3 +22,6 @@ OpenTally is not affiliated with or endorsed by Frappe Technologies.
 
 Components under other licences:
 - connectors/mcp and plugins/claude: MIT License (see connectors/mcp/LICENSE).
+- crates/ot-server/src/mcp/trial-balance-widget.html bundles the MCP Apps SDK and its
+  dependencies; their notices are in
+  crates/ot-server/src/mcp/trial-balance-widget-notices.txt.

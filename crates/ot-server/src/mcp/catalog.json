@@ -1,0 +1,1331 @@
+{
+ "widget_uri": "ui://opentally/trial-balance-v1.html",
+ "tools": [
+  {
+   "name": "get_company",
+   "title": "Get company and period settings",
+   "description": "Read the current OpenTally company, source company and closing date.",
+   "input_schema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "list_groups",
+   "title": "List account groups",
+   "description": "Find group IDs, names and parent IDs.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "offset": {
+      "description": "Zero-based offset for the returned rows.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "Maximum rows per table. Defaults to 25.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     }
+    },
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "list_ledgers",
+   "title": "List ledgers",
+   "description": "Find ledger IDs, names, ledger types and account groups.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "offset": {
+      "description": "Zero-based offset for the returned rows.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "Maximum rows per table. Defaults to 25.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     }
+    },
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "list_vouchers",
+   "title": "Search Day Book",
+   "description": "Search Day Book by voucher type, status, reference, ledger, narration or inclusive date range. Results contain up to 25 vouchers per page.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "enum": [
+       "payment",
+       "receipt",
+       "journal",
+       "contra",
+       "other"
+      ]
+     },
+     "from": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "to": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "q": {
+      "type": "string",
+      "maxLength": 100
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "posted",
+       "cancelled",
+       "optional"
+      ]
+     },
+     "page": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 4294967295
+     }
+    },
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "get_voucher",
+   "title": "Get voucher and its postings",
+   "description": "Read a voucher by ID, including ordered debit and credit lines, narration and cost allocations.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "voucher_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "offset": {
+      "description": "Zero-based offset for the returned rows.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "Maximum rows per table. Defaults to 25.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     }
+    },
+    "required": [
+     "voucher_id"
+    ],
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "list_voucher_revisions",
+   "title": "List voucher revisions",
+   "description": "Read the voucher audit trail, including the stated operator, action, reason, and date.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "voucher_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "offset": {
+      "description": "Zero-based offset for the returned rows.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "Maximum rows per table. Defaults to 25.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     }
+    },
+    "required": [
+     "voucher_id"
+    ],
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "get_voucher_revision",
+   "title": "Get a voucher revision",
+   "description": "Read the ordered posting lines for one historical revision.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "voucher_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "revision": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 2147483647
+     },
+     "offset": {
+      "description": "Zero-based offset for the returned rows.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "Maximum rows per table. Defaults to 25.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     }
+    },
+    "required": [
+     "voucher_id",
+     "revision"
+    ],
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "trial_balance",
+   "title": "Run Trial Balance",
+   "description": "Show opening, debit and credit movements, and closing balances for an inclusive period. Missing openings remain unconfirmed. Totals cover all rows.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "from": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "to": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "offset": {
+      "description": "Zero-based offset for the returned rows.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "Maximum rows per table. Defaults to 25.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     }
+    },
+    "required": [
+     "from",
+     "to"
+    ],
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": true
+  },
+  {
+   "name": "ledger_statement",
+   "title": "Get ledger statement",
+   "description": "Read a ledger's opening, closing, and individual posted entries for an inclusive period.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "ledger_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "from": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "to": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "offset": {
+      "description": "Zero-based offset for the returned rows.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "Maximum rows per table. Defaults to 25.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     }
+    },
+    "required": [
+     "ledger_id",
+     "from",
+     "to"
+    ],
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "cost_center_totals",
+   "title": "Get cost-centre totals",
+   "description": "Read allocated debit and credit totals by category and cost centre. Categories may overlap.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "from": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "to": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "offset": {
+      "description": "Zero-based offset for the returned rows.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "Maximum rows per table. Defaults to 25.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     }
+    },
+    "required": [
+     "from",
+     "to"
+    ],
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "cost_center_postings",
+   "title": "Get cost-centre postings",
+   "description": "Trace a cost category and centre back to individual voucher posting lines.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "from": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "to": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "category": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+     },
+     "centre": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+     },
+     "offset": {
+      "description": "Zero-based offset for the returned rows.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "Maximum rows per table. Defaults to 25.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     }
+    },
+    "required": [
+     "from",
+     "to",
+     "category",
+     "centre"
+    ],
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "bank_reconciliation",
+   "title": "Review bank reconciliation",
+   "description": "List statement transactions and ledger postings with their active match IDs.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "ledger_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "from": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "to": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "offset": {
+      "description": "Zero-based offset for the returned rows.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "Maximum rows per table. Defaults to 25.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+     }
+    },
+    "required": [
+     "ledger_id",
+     "from",
+     "to"
+    ],
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "preview_import",
+   "title": "Preview a Tally or OpenTally import",
+   "description": "Validate accounting data and show totals, duplicates and warnings. The preview rolls back its database transaction.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "format": {
+      "type": "string",
+      "enum": [
+       "xml",
+       "json"
+      ]
+     },
+     "content": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000000,
+      "description": "Full text of a Tally export or OpenTally JSON file."
+     },
+     "company": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 150
+     },
+     "opening_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     }
+    },
+    "required": [
+     "format",
+     "content"
+    ],
+    "additionalProperties": false
+   },
+   "write": false,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "create_group",
+   "title": "Create account group",
+   "description": "Add an account group under an optional existing parent.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+     },
+     "parent_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "create_ledger",
+   "title": "Create ledger",
+   "description": "Add a cash, bank or general ledger under an optional account group.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "cash",
+       "bank",
+       "general"
+      ]
+     },
+     "group_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     }
+    },
+    "required": [
+     "name",
+     "kind"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "post_voucher",
+   "title": "Post voucher",
+   "description": "Post an INR Payment, Receipt, Journal or Contra voucher. The open period and balanced accounting lines are checked.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "voucher": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "request_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "description": "A UUID for this posting request. Reuse the same UUID on a retry."
+         },
+         "date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+         },
+         "reference": {
+          "type": "string",
+          "maxLength": 100
+         },
+         "narration": {
+          "type": "string",
+          "maxLength": 500
+         },
+         "kind": {
+          "type": "string",
+          "enum": [
+           "payment",
+           "receipt"
+          ]
+         },
+         "cash_ledger_id": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+         },
+         "other_ledger_id": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+         },
+         "amount": {
+          "type": "string",
+          "pattern": "^\\d{1,18}(?:\\.\\d{1,2})?$"
+         }
+        },
+        "required": [
+         "request_id",
+         "date",
+         "kind",
+         "cash_ledger_id",
+         "other_ledger_id",
+         "amount"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "request_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "description": "A UUID for this posting request. Reuse the same UUID on a retry."
+         },
+         "date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+         },
+         "reference": {
+          "type": "string",
+          "maxLength": 100
+         },
+         "narration": {
+          "type": "string",
+          "maxLength": 500
+         },
+         "kind": {
+          "type": "string",
+          "enum": [
+           "payment",
+           "receipt",
+           "journal",
+           "contra"
+          ]
+         },
+         "postings": {
+          "minItems": 2,
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "ledger_id": {
+             "type": "integer",
+             "exclusiveMinimum": 0,
+             "maximum": 9007199254740991
+            },
+            "side": {
+             "type": "string",
+             "enum": [
+              "debit",
+              "credit"
+             ]
+            },
+            "amount": {
+             "type": "string",
+             "pattern": "^\\d{1,18}(?:\\.\\d{1,2})?$",
+             "description": "Positive amount in rupees, as a decimal string."
+            },
+            "narration": {
+             "type": "string",
+             "maxLength": 500
+            },
+            "allocations": {
+             "maxItems": 100,
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "category": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+               },
+               "centre": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+               },
+               "amount": {
+                "type": "string",
+                "pattern": "^\\d{1,18}(?:\\.\\d{1,2})?$"
+               }
+              },
+              "required": [
+               "category",
+               "centre",
+               "amount"
+              ],
+              "additionalProperties": false
+             }
+            }
+           },
+           "required": [
+            "ledger_id",
+            "side",
+            "amount"
+           ],
+           "additionalProperties": false
+          }
+         }
+        },
+        "required": [
+         "request_id",
+         "date",
+         "kind",
+         "postings"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "voucher"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": false,
+   "idempotent": true,
+   "widget": false
+  },
+  {
+   "name": "edit_voucher",
+   "title": "Edit posted voucher",
+   "description": "Replace an open-period local voucher’s posting data and retain the prior revision. Use the current revision and keep the same kind.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "voucher_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "expected_revision": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 2147483647
+     },
+     "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Name supplied by the operator for the audit record."
+     },
+     "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+     },
+     "voucher": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "request_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "description": "A UUID for this posting request. Reuse the same UUID on a retry."
+         },
+         "date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+         },
+         "reference": {
+          "type": "string",
+          "maxLength": 100
+         },
+         "narration": {
+          "type": "string",
+          "maxLength": 500
+         },
+         "kind": {
+          "type": "string",
+          "enum": [
+           "payment",
+           "receipt"
+          ]
+         },
+         "cash_ledger_id": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+         },
+         "other_ledger_id": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+         },
+         "amount": {
+          "type": "string",
+          "pattern": "^\\d{1,18}(?:\\.\\d{1,2})?$"
+         }
+        },
+        "required": [
+         "request_id",
+         "date",
+         "kind",
+         "cash_ledger_id",
+         "other_ledger_id",
+         "amount"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "request_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "description": "A UUID for this posting request. Reuse the same UUID on a retry."
+         },
+         "date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+         },
+         "reference": {
+          "type": "string",
+          "maxLength": 100
+         },
+         "narration": {
+          "type": "string",
+          "maxLength": 500
+         },
+         "kind": {
+          "type": "string",
+          "enum": [
+           "payment",
+           "receipt",
+           "journal",
+           "contra"
+          ]
+         },
+         "postings": {
+          "minItems": 2,
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "ledger_id": {
+             "type": "integer",
+             "exclusiveMinimum": 0,
+             "maximum": 9007199254740991
+            },
+            "side": {
+             "type": "string",
+             "enum": [
+              "debit",
+              "credit"
+             ]
+            },
+            "amount": {
+             "type": "string",
+             "pattern": "^\\d{1,18}(?:\\.\\d{1,2})?$",
+             "description": "Positive amount in rupees, as a decimal string."
+            },
+            "narration": {
+             "type": "string",
+             "maxLength": 500
+            },
+            "allocations": {
+             "maxItems": 100,
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "category": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+               },
+               "centre": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+               },
+               "amount": {
+                "type": "string",
+                "pattern": "^\\d{1,18}(?:\\.\\d{1,2})?$"
+               }
+              },
+              "required": [
+               "category",
+               "centre",
+               "amount"
+              ],
+              "additionalProperties": false
+             }
+            }
+           },
+           "required": [
+            "ledger_id",
+            "side",
+            "amount"
+           ],
+           "additionalProperties": false
+          }
+         }
+        },
+        "required": [
+         "request_id",
+         "date",
+         "kind",
+         "postings"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "voucher_id",
+     "expected_revision",
+     "actor",
+     "reason",
+     "voucher"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": true,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "cancel_voucher",
+   "title": "Cancel posted voucher",
+   "description": "Cancel a local voucher in an open period. The voucher remains in Day Book and its accounting effect is removed.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "voucher_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "expected_revision": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 2147483647
+     },
+     "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Name supplied by the operator for the audit record."
+     },
+     "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+     }
+    },
+    "required": [
+     "voucher_id",
+     "expected_revision",
+     "actor",
+     "reason"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": true,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "commit_import",
+   "title": "Import accounting data",
+   "description": "Write a Tally XML or OpenTally JSON batch. A higher source revision can update an existing voucher.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "format": {
+      "type": "string",
+      "enum": [
+       "xml",
+       "json"
+      ]
+     },
+     "content": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000000,
+      "description": "Full text of a Tally export or OpenTally JSON file."
+     },
+     "company": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 150
+     },
+     "opening_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     }
+    },
+    "required": [
+     "format",
+     "content"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": true,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "record_opening",
+   "title": "Record ledger opening balance",
+   "description": "Set a dated opening balance with a source reference. Use positive rupees for debit, negative for credit and 0.00 for a confirmed zero.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "ledger_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "amount": {
+      "type": "string",
+      "pattern": "^[+-]?\\d{1,18}(?:\\.\\d{1,2})?$"
+     },
+     "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+     }
+    },
+    "required": [
+     "ledger_id",
+     "date",
+     "amount",
+     "source"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": false,
+   "idempotent": true,
+   "widget": false
+  },
+  {
+   "name": "set_company_name",
+   "title": "Change company name",
+   "description": "Change the display name of the local book.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 150
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": true,
+   "idempotent": true,
+   "widget": false
+  },
+  {
+   "name": "close_period",
+   "title": "Close accounting period",
+   "description": "Lock posting and corrections through the supplied date.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "through": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Name supplied by the operator for the audit record."
+     },
+     "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+     }
+    },
+    "required": [
+     "through",
+     "actor",
+     "reason"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": true,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "import_bank_statement",
+   "title": "Import bank statement CSV",
+   "description": "Import bank lines with stable transaction IDs, YYYY-MM-DD dates and signed rupee amounts. Deposits are positive.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "ledger_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "content": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 750000
+     }
+    },
+    "required": [
+     "ledger_id",
+     "content"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": false,
+   "idempotent": true,
+   "widget": false
+  },
+  {
+   "name": "match_bank_rows",
+   "title": "Match bank and ledger rows",
+   "description": "Record a reviewed match using statement IDs and posting identifiers. Signed totals must agree.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "ledger_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "statement_ids": {
+      "minItems": 1,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991
+      }
+     },
+     "postings": {
+      "minItems": 1,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "voucher_id": {
+         "type": "integer",
+         "exclusiveMinimum": 0,
+         "maximum": 9007199254740991
+        },
+        "revision": {
+         "type": "integer",
+         "exclusiveMinimum": 0,
+         "maximum": 2147483647
+        },
+        "line_no": {
+         "type": "integer",
+         "exclusiveMinimum": 0,
+         "maximum": 2147483647
+        }
+       },
+       "required": [
+        "voucher_id",
+        "revision",
+        "line_no"
+       ],
+       "additionalProperties": false
+      }
+     },
+     "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Name supplied by the operator for the audit record."
+     },
+     "note": {
+      "type": "string",
+      "maxLength": 500
+     }
+    },
+    "required": [
+     "ledger_id",
+     "statement_ids",
+     "postings",
+     "actor"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": false,
+   "idempotent": false,
+   "widget": false
+  },
+  {
+   "name": "undo_bank_match",
+   "title": "Undo bank reconciliation match",
+   "description": "Undo a bank match and retain the operator’s reason. Its rows return to the unmatched list.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "match_id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Name supplied by the operator for the audit record."
+     },
+     "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+     }
+    },
+    "required": [
+     "match_id",
+     "actor",
+     "reason"
+    ],
+    "additionalProperties": false
+   },
+   "write": true,
+   "destructive": true,
+   "idempotent": false,
+   "widget": false
+  }
+ ],
+ "prompts": [
+  {
+   "name": "review_period",
+   "title": "Review a period before closing",
+   "description": "Review Day Book, Trial Balance, openings and unresolved differences for a period.",
+   "arguments": [
+    {
+     "name": "from",
+     "description": "First date, YYYY-MM-DD",
+     "required": true
+    },
+    {
+     "name": "to",
+     "description": "Last date, YYYY-MM-DD",
+     "required": true
+    }
+   ],
+   "instructions": "Check company settings and Trial Balance for the supplied dates. Review missing openings, any imbalance, and Day Book exceptions. Link exceptions to their voucher or ledger IDs. Present a review summary."
+  },
+  {
+   "name": "review_bank",
+   "title": "Review a bank reconciliation",
+   "description": "Compare bank statement and ledger rows, including possible grouped matches.",
+   "arguments": [
+    {
+     "name": "from",
+     "description": "First date, YYYY-MM-DD",
+     "required": true
+    },
+    {
+     "name": "to",
+     "description": "Last date, YYYY-MM-DD",
+     "required": true
+    },
+    {
+     "name": "ledger_id",
+     "description": "Bank ledger ID",
+     "required": true
+    }
+   ],
+   "instructions": "Review the bank statement and book postings for the supplied ledger and dates. Compare dates, references and signed totals. Identify possible one-to-many matches and items that need an operator’s decision."
+  },
+  {
+   "name": "review_import",
+   "title": "Review an accounting import",
+   "description": "Review the controls and evidence needed to preview a Tally or OpenTally import.",
+   "instructions": "Use preview_import when the user supplies the original file text and company. Summarize posted debit and credit totals, rejected data, duplicate and revised vouchers, and any evidence still needed."
+  }
+ ],
+ "guides": [
+  {
+   "uri": "opentally://guide/accounting",
+   "name": "OpenTally accounting and report guide",
+   "description": "Report date scope, amount formats, journal sides, and voucher identities.",
+   "mimeType": "text/markdown",
+   "text": "# OpenTally accounting guide\n\nOpenTally stores one INR company per DuckDB file. Write amounts are decimal rupee strings. Report fields with a _paise suffix are exact integer strings. Signed balances use debit positive and credit negative. A null opening or closing indicates unconfirmed data.\n\nDay Book accepts inclusive dates, status and voucher kind. Report row windows use offset and limit. Headline report totals cover the full result. Find ledger and voucher identifiers before opening detail tools.\n\nThe application validates balanced ordered postings, closed periods, bank matches and voucher revisions. Use a stable request UUID for voucher creation and retry. Edit and cancellation retain the previous revision."
+  },
+  {
+   "uri": "opentally://guide/import-reconciliation",
+   "name": "OpenTally import and bank guide",
+   "description": "Import preview controls and bank match rules.",
+   "mimeType": "text/markdown",
+   "text": "# OpenTally import and reconciliation guide\n\nPreview the original Tally XML or OpenTally JSON text before choosing whether to persist an import. Supply its source company and a confirmed opening date when available. Check voucher and posting counts, debit and credit totals, duplicate and revised entries, and import warnings.\n\nBank CSV columns are transaction_id, date, amount, reference and description. Use an immutable source transaction ID and a YYYY-MM-DD date. Deposits are positive and withdrawals negative.\n\nA reviewed match can span multiple statement lines and postings. Both signed totals must agree. Match IDs identify the reconciliation group. Undo records the operator and reason and returns the underlying rows to review."
+  }
+ ]
+}

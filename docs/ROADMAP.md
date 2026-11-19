@@ -63,7 +63,7 @@ This roadmap breaks the work into **10 levels**, plus an **AI integration track 
 | 0.10 | CI and quality | GitHub Actions: fmt, clippy `-D warnings`, test, `trunk build --release`, `cargo deny check licenses`. Cache the DuckDB build. Logging with `tracing`. | CI green on the PR |
 | 0.11 | Performance probe | Bench: insert 100k vouchers, then run Trial Balance. Record the numbers in `docs/bench.md`. | Numbers recorded; act if Trial Balance takes more than 2 s |
 | 0.12 | `opentally` CLI | `clap` subcommands on the one binary: `serve`, `migrate`, `user add/reset`, `token create/revoke`, `backup`, `restore`, `company list`. `--json` output and stable exit codes so AI agents can script it. | `opentally --help`; CLI tests |
-| 0.13 | Native Rust MCP server | New crate `ot-mcp` using the official Rust MCP SDK (`rmcp`). It offers stdio (`opentally mcp`) and Streamable HTTP at `/mcp` on `ot-server`. It calls `ot-store` directly through the writer task, with no HTTP hop. Port the existing 25 tools, resources, 3 prompts and the Trial Balance widget from `connectors/mcp/src/*.mjs`, keeping the same tool names. | The connector's test cases pass against `ot-mcp` |
+| 0.13 | Native Rust MCP server | Module `ot-server::mcp` (not a separate crate, as it needs the server's auth and database handles) using the official Rust MCP SDK (`rmcp`). It offers Streamable HTTP at `/mcp` on `ot-server`, and `opentally mcp`, a stdio bridge to it, because only one process may open a DuckDB book. It calls `ot-store` directly through the writer task, with no HTTP hop. Port the existing 25 tools, resources, 3 prompts and the Trial Balance widget from `connectors/mcp/src/*.mjs`, keeping the same tool names. | The connector's test cases pass against `ot-mcp` |
 
 **PRs:** 0.1–0.3 · 0.4–0.6 · 0.7–0.8 · 0.9–0.10 · 0.11 · 0.12–0.13
 
@@ -324,7 +324,7 @@ Level A runs alongside: A1–A3 with L0 · tools grow with L1–L8 · A4 ships a
 | Level | State |
 |---|---|
 | Plan, licence, roadmap | ✅ Done (PR #4) |
-| Level 0 | ⏳ In progress. Done: 0.1–0.7, 0.9 and 0.10, and part of 0.8. That covers the workspace, migrations, single writer, `ot-core`, and users, roles, sessions and API tokens. From 0.8: every route under `/api/v1`. 0.9 adds the Leptos interface at `/app/` (sign-in, first-user setup, shell, keyboard layer, `FormView`, `ListView`, Day Book), and 0.10 adds GitHub Actions CI and `cargo deny`. Next: 0.11–0.13. Moved to the start of Level 1: 0.2b storage traits, the generic `/api/v1/{doctype}` routes and the OpenAPI spec. |
+| Level 0 | ✅ Done except the parts moved to Level 1. Steps 0.1–0.13 are complete: workspace, migrations, single writer, `ot-core`, auth, `/api/v1`, Leptos interface, CI, performance probe (`docs/bench.md`), `opentally` CLI and the native MCP server at `/mcp` with the `opentally mcp` stdio bridge. Moved to the start of Level 1: 0.2b storage traits, the generic `/api/v1/{doctype}` routes and the OpenAPI spec. |
 | All later levels | Not started |
 
 ## Verification (each level)

@@ -16,16 +16,20 @@ default = ["bundled-duckdb"]
 bundled-duckdb = ["ot-store/bundled-duckdb"]
 
 [dependencies]
+clap = { version = "4.6", features = ["derive", "env"] }
 argon2 = { version = "0.5", features = ["std"] }
 axum.workspace = true
 getrandom = "0.3"
 ot-api-types = { path = "../ot-api-types" }
 ot-core = { path = "../ot-core" }
+regex = "1.13"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rmcp = { version = "3.11", default-features = false, features = ["server", "transport-streamable-http-server"] }
 ot-store = { path = "../ot-store", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
-tokio.workspace = true
+tokio = { workspace = true, features = ["io-std", "io-util"] }
 tower-http = { version = "0.6", features = ["fs"] }
 
 [dev-dependencies]

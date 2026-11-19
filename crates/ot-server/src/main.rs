@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod api_tests;
 mod auth;
+mod cli;
 mod db;
+mod mcp;
 
 use std::{
     env, fs,
@@ -382,6 +384,42 @@ fn ui_service(dir: PathBuf) -> Router<AppState> {
         .nest_service("/app/", files)
 }
 
+/// The MCP server at `/mcp`: stateless Streamable HTTP with JSON replies. The Host
+/// header must be a loopback name or one listed in `OPENTALLY_MCP_ALLOWED_HOSTS`
+/// (comma-separated), which guards a local book against DNS rebinding.
+fn mcp_service(
+    db: Database,
+) -> rmcp::transport::streamable_http_server::StreamableHttpService<
+    mcp::McpServer,
+    rmcp::transport::streamable_http_server::session::local::LocalSessionManager,
+> {
+    use rmcp::transport::streamable_http_server::{
+        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+    };
+    let mut hosts = vec![
+        "localhost".to_owned(),
+        "127.0.0.1".to_owned(),
+        "::1".to_owned(),
+    ];
+    if let Ok(extra) = env::var("OPENTALLY_MCP_ALLOWED_HOSTS") {
+        hosts.extend(
+            extra
+                .split(',')
+                .map(str::trim)
+                .filter(|h| !h.is_empty())
+                .map(str::to_owned),
+        );
+    }
+    let mut config = StreamableHttpServerConfig::default().with_allowed_hosts(hosts);
+    config.legacy_session_mode = false;
+    config.json_response = true;
+    StreamableHttpService::new(
+        move || Ok(mcp::McpServer::new(db.clone())),
+        std::sync::Arc::new(LocalSessionManager::default()),
+        config,
+    )
+}
+
 fn router(state: AppState) -> Router {
     router_with_ui(state, ui_dir())
 }
@@ -390,6 +428,7 @@ fn router_with_ui(state: AppState, ui: PathBuf) -> Router {
     let protected = Router::new()
         .merge(Router::new().nest("/api", book_routes()))
         .nest("/api/v1", book_routes())
+        .nest_service("/mcp", mcp_service(state.db.clone()))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::guard,
@@ -440,12 +479,63 @@ fn router_with_ui(state: AppState, ui: PathBuf) -> Router {
         .with_state(state)
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = env::var_os("OPENTALLY_DB")
-        .or_else(|| env::var_os("VOUCHER_DB"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("data/vouchers.duckdb"));
+fn main() -> std::process::ExitCode {
+    use clap::Parser;
+    let cli = cli::Cli::parse();
+    match &cli.command {
+        None | Some(cli::Command::Serve) => {
+            let path = cli::book_path(&cli);
+            let result = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| e.into())
+                .and_then(|runtime| runtime.block_on(serve(path)));
+            match result {
+                Ok(()) => std::process::ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("opentally: {error}");
+                    std::process::ExitCode::FAILURE
+                }
+            }
+        }
+        Some(cli::Command::Mcp { server }) => {
+            let result =
+                mcp::bridge::BridgeConfig::from_environment(server.as_deref()).and_then(|config| {
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|e| e.to_string())?
+                        .block_on(mcp::bridge::run(config))
+                });
+            match result {
+                Ok(()) => std::process::ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("opentally mcp: {error}");
+                    std::process::ExitCode::FAILURE
+                }
+            }
+        }
+        Some(command) => {
+            match cli::run(&cli, command, &mut std::io::stdin().lock()) {
+                Ok(output) => {
+                    println!("{}", output.render(cli.json));
+                    std::process::ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    // JSON errors go to stdout so a program reads one stream.
+                    if cli.json {
+                        println!("{}", error.render(true));
+                    } else {
+                        eprintln!("{}", error.render(false));
+                    }
+                    std::process::ExitCode::from(error.code as u8)
+                }
+            }
+        }
+    }
+}
+
+async fn serve(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(parent) = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())

@@ -36,7 +36,7 @@ pub const SESSION_COOKIE: &str = "ot_session";
 pub const CSRF_COOKIE: &str = "ot_csrf";
 pub const CSRF_HEADER: &str = "x-csrf-token";
 const SESSION_SECONDS: i64 = 12 * 60 * 60;
-const TOKEN_PREFIX: &str = "ot_";
+pub const TOKEN_PREFIX: &str = "ot_";
 const MAX_FAILURES: u32 = 5;
 const FAILURE_WINDOW: Duration = Duration::from_secs(15 * 60);
 
@@ -130,7 +130,7 @@ impl IntoResponse for AuthError {
 
 // ---------------------------------------------------------------- secrets
 
-fn random_hex(bytes: usize) -> Result<String, AuthError> {
+pub fn random_hex(bytes: usize) -> Result<String, AuthError> {
     let mut buffer = vec![0_u8; bytes];
     getrandom::fill(&mut buffer).map_err(|_| AuthError::Store(StoreError::Unavailable))?;
     Ok(buffer.iter().map(|b| format!("{b:02x}")).collect())
@@ -293,6 +293,8 @@ fn rule(method: &Method, path: &str) -> Option<Rule> {
             Rule::Any(&[(JOURNAL, Perm::Submit)])
         }
         (_, "/session/password" | "/tokens" | "/tokens/{id}") => Rule::Signed,
+        // Each MCP tool is checked against its own route by the MCP server.
+        (_, p) if p == "/mcp" || p.starts_with("/mcp/") => Rule::Signed,
         (_, "/users" | "/users/{id}") => Rule::Admin,
         _ => return None,
     })
@@ -313,19 +315,24 @@ pub async fn guard(
         .get::<MatchedPath>()
         .map(|path| path.as_str().to_owned())
         .unwrap_or_default();
-    let allowed = match rule(request.method(), &path) {
+    if !route_allowed(&identity, request.method(), &path) {
+        return Err(AuthError::Forbidden);
+    }
+    request.extensions_mut().insert(identity);
+    Ok(next.run(request).await)
+}
+
+/// Whether the caller may use a route. Routes whose rule is checked by the handler
+/// (voucher posting and changes) pass here; the handler checks the voucher's kind.
+pub fn route_allowed(identity: &Identity, method: &Method, path: &str) -> bool {
+    match rule(method, path) {
         Some(Rule::Any(pairs)) => pairs
             .iter()
             .any(|(doctype, perm)| identity.can(doctype, *perm)),
         Some(Rule::Handler | Rule::Signed) => true,
         Some(Rule::Admin) => identity.grant.is_admin(),
         None => false,
-    };
-    if !allowed {
-        return Err(AuthError::Forbidden);
     }
-    request.extensions_mut().insert(identity);
-    Ok(next.run(request).await)
 }
 
 /// The DocType that governs a voucher kind.

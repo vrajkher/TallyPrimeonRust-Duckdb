@@ -160,9 +160,11 @@ test("installed stdio connector reads and writes a temporary Rust/DuckDB book", 
     app.once("error", (error) => { clearTimeout(timer); reject(error); });
     app.once("exit", (code) => { clearTimeout(timer); reject(new Error("OpenTally exited: " + code)); });
   });
+  // OPENTALLY_TEST_RUST_MCP=1 runs the same checks against the Rust `opentally mcp`.
+  const rust = process.env.OPENTALLY_TEST_RUST_MCP === "1";
   const executable = process.env.OPENTALLY_TEST_MCP ?? fileURLToPath(new URL("../src/cli.mjs", import.meta.url));
   const transport = new StdioClientTransport({
-    command: process.execPath, args: [executable, "stdio"],
+    command: rust ? liveBinary : process.execPath, args: rust ? ["mcp"] : [executable, "stdio"],
     env: { OPENTALLY_PORT: apiPort, OPENTALLY_MCP_WRITES: "true" },
   });
   const client = testClient();

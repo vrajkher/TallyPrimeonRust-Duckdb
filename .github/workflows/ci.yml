@@ -44,6 +44,9 @@ jobs:
         run: |
           npm ci
           OPENTALLY_TEST_BIN="$GITHUB_WORKSPACE/target/debug/opentally" npm test
+      - name: Same live MCP test against the Rust `opentally mcp`
+        working-directory: connectors/mcp
+        run: OPENTALLY_TEST_BIN="$GITHUB_WORKSPACE/target/debug/opentally" OPENTALLY_TEST_RUST_MCP=1 npm test
 
   web:
     name: Leptos interface build

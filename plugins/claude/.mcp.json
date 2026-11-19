@@ -1,0 +1,7 @@
+{
+  "opentally": {
+    "type": "stdio",
+    "command": "opentally-mcp",
+    "args": ["stdio"]
+  }
+}

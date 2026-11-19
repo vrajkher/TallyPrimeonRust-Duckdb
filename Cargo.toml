@@ -1,10 +1,10 @@
 [package]
-name = "voucher-desk"
-version = "0.1.0"
+name = "opentally"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT"
-description = "Local payment and receipt vouchers backed by DuckDB"
+description = "Local accounting and reconciliation backed by DuckDB"
 
 [features]
 default = ["bundled-duckdb"]
@@ -13,7 +13,10 @@ bundled-duckdb = ["duckdb/bundled"]
 [dependencies]
 axum = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+csv = "1.4"
 duckdb = "=1.4.4"
+roxmltree = "0.21"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
 uuid = "1"

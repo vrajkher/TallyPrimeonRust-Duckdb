@@ -1,0 +1,42 @@
+{
+  "manifest_version": "0.3",
+  "name": "opentally",
+  "display_name": "OpenTally",
+  "version": "0.3.0",
+  "description": "Connect Claude Desktop to the OpenTally app running on your computer.",
+  "author": { "name": "OpenTally contributors" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vrajkher/TallyPrimeonRust-Duckdb"
+  },
+  "license": "MIT",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js", "stdio"],
+      "env": {
+        "OPENTALLY_PORT": "${user_config.port}",
+        "OPENTALLY_MCP_WRITES": "${user_config.enable_changes}"
+      }
+    }
+  },
+  "user_config": {
+    "port": {
+      "type": "number",
+      "title": "OpenTally port",
+      "description": "The port shown when OpenTally starts.",
+      "default": 3000,
+      "min": 1,
+      "max": 65535,
+      "required": true
+    },
+    "enable_changes": {
+      "type": "boolean",
+      "title": "Allow changes to the book",
+      "description": "Enable voucher posting, import, edits, period closing and changes to bank matches.",
+      "default": false
+    }
+  }
+}

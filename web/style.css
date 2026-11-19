@@ -134,7 +134,7 @@ section[id] { scroll-margin-top: 15px; }
 fieldset { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
 
 .voucher-form { container-type: inline-size; }
-.voucher-types { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-bottom: 19px; }
+.voucher-types { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin-bottom: 14px; }
 .type-button {
   display: flex;
   align-items: center;
@@ -159,7 +159,7 @@ kbd { display: inline-block; padding: 2px 4px; border: 1px solid #cad8ce; border
 
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 14px 13px; }
 .cash-fields { display: contents; }
-#voucher-form[data-kind="journal"] .voucher-date { grid-column: 1 / -1; }
+#voucher-form[data-entry="lines"] .voucher-date { grid-column: 1 / -1; }
 .field { display: grid; align-content: start; gap: 6px; min-width: 0; font-size: 12px; font-weight: 690; }
 .field.full { grid-column: 1 / -1; }
 .field small { margin-left: 5px; color: var(--muted); font-size: 11px; font-weight: 500; }
@@ -217,7 +217,7 @@ kbd { display: inline-block; padding: 2px 4px; border: 1px solid #cad8ce; border
 
 .register { margin-top: 20px; }
 .register-heading { align-items: center; }
-.filters { display: grid; grid-template-columns: minmax(145px, 2fr) minmax(110px, 1fr) repeat(2, minmax(116px, 1fr)) auto; align-items: end; gap: 8px; }
+.filters { display: grid; grid-template-columns: minmax(130px, 1.5fr) minmax(100px, 1fr) repeat(2, minmax(112px, 1fr)) minmax(95px, 1fr) auto; align-items: end; gap: 8px; }
 .filter-actions { display: flex; gap: 8px; }
 .register-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 16px; border: 1px solid var(--line); border-radius: 9px; background: #f5f8f3; }
 .register-totals div { padding: 10px 13px; min-width: 0; }
@@ -291,11 +291,44 @@ dialog::backdrop { background: #10291fc2; }
   .register-totals div { padding-inline: 7px; }
   .register-totals dd { font-size: 14px; }
 }
+.check-field { display: flex; gap: 7px; align-items: center; margin: 0 0 13px; font-size: 12px; color: var(--muted); }
+.check-field input { margin: 0; accent-color: var(--accent, #25604e); }
+.edit-fields { margin-top: 14px; }
+.posting-extras { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding: 3px 0 8px; font-size: 12px; }
+.posting-extras summary, .book-section summary { cursor: pointer; }
+.posting-extras .field { margin-top: 6px; }
+.allocation-entry { display: grid; grid-template-columns: 1fr 1fr minmax(55px, .7fr) 28px; align-items: end; gap: 5px; margin: 4px 0 7px; }
+.posting-extras > button { margin-top: 6px; }
+.posting-note { display: block; margin-top: 3px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.kind-tag.contra { background: #e4edf4; color: #34566f; }
+.book-section { margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--line); }
+.book-section > p, .book-section > summary, .book-section > h3 { margin: 0 0 10px; }
+.book-section > summary { font-weight: 600; font-size: 14px; }
+.workspace-form { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.workspace-form .field { flex: 1 1 128px; }
+.workspace-form input[type="file"] { max-width: 100%; }
+.form-note { flex: 1 0 100%; font-size: 12px; color: var(--muted); margin: 0; }
+.import-warnings { padding-inline-start: 18px; color: var(--muted); font-size: 12px; }
+.book-table { min-width: 420px; }
+.book-table td { overflow-wrap: anywhere; }
+.book-table td:last-child { white-space: nowrap; }
+.review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.review-grid .book-table { min-width: 310px; }
+.review-grid > div { min-width: 0; }
+.dialog-only { margin-top: 12px; }
+.history-event { border-top: 1px solid var(--line); padding: 8px 0; }
+.history-event p { margin: 4px 0; color: var(--muted); font-size: 12px; }
+
+@media (max-width: 780px) {
+  .review-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 @container (max-width: 450px) {
-  .type-button kbd { display: none; }
+  .type-button kbd, .type-button .direction { display: none; }
+  .type-button { justify-content: center; }
 }
 @container (max-width: 330px) {
-  .type-button .direction { display: none; }
+  .voucher-types { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .journal-line { grid-template-columns: 70px minmax(0, 2fr) minmax(63px, 1fr) 28px; }
   .journal-line .field select, .journal-line .field input { padding-inline: 5px; }
 }
@@ -309,7 +342,7 @@ dialog::backdrop { background: #10291fc2; }
 @media print {
   body:has(#detail-dialog[open]) > :not(#detail-dialog) { display: none !important; }
   #detail-dialog[open] { position: static; inset: auto; width: auto; max-width: none; max-height: none; padding: 0; border: 0; box-shadow: none; overflow: visible; }
-  #detail-dialog::backdrop, .close-button, .dialog-actions { display: none; }
+  #detail-dialog::backdrop, .close-button, .dialog-actions, .dialog-only { display: none; }
   .detail-table :is(th, td) { padding-block: 8px; }
   .detail-table tr { break-inside: avoid; }
 }

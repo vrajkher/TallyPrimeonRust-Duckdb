@@ -1,0 +1,11 @@
+{
+  "name": "opentally",
+  "version": "0.3.0",
+  "description": "OpenTally accounting, Day Book, Trial Balance and bank reconciliation tools",
+  "homepage": "https://github.com/vrajkher/TallyPrimeonRust-Duckdb",
+  "license": "MIT",
+  "author": {
+    "name": "OpenTally contributors"
+  },
+  "icon": "./.claude-plugin/icon.png"
+}

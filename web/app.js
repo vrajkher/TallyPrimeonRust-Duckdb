@@ -7,6 +7,7 @@ const cashFields = byId("cash-fields");
 const journalFields = byId("journal-fields");
 const journalLines = byId("journal-lines");
 const addLineButton = byId("add-journal-line");
+const compoundCheckbox = byId("compound-entry");
 const typeButtons = document.querySelectorAll("[data-voucher-kind]");
 const registerForm = byId("register-form");
 const ledgerForm = byId("ledger-form");
@@ -22,11 +23,12 @@ const integerFormat = new Intl.NumberFormat("en-IN");
 const dateFormat = new Intl.DateTimeFormat("en-IN", {
   day: "2-digit", month: "short", year: "numeric", timeZone: "UTC",
 });
-const kindNames = { payment: "Payment", receipt: "Receipt", journal: "Journal" };
+const kindNames = { payment: "Payment", receipt: "Receipt", journal: "Journal", contra: "Contra", other: "Imported" };
 const kindDescriptions = {
   payment: "Record money paid from cash or bank.",
   receipt: "Record money received into cash or bank.",
   journal: "Record an adjustment with balanced debit and credit lines.",
+  contra: "Transfer money between your cash and bank accounts.",
 };
 const shortcutKinds = { F5: "payment", F6: "receipt", F7: "journal" };
 const maxJournalLines = 50;
@@ -35,6 +37,8 @@ const ledgerKindNames = { cash: "Cash", bank: "Bank", general: "Party / income /
 let kind = "payment";
 let ledgers = [];
 let requestId;
+let editingVoucher;
+let displayedVoucher;
 let savingVoucher = false;
 let savingLedger = false;
 let inlineLedger;
@@ -130,7 +134,7 @@ function addJournalLine(side) {
   sideSelect.value = side;
   sideSelect.selectedOptions[0].defaultSelected = true;
   const ledger = journalControl(line, "ledger");
-  setLedgerChoices(ledger, ledgers, "", "Select a ledger");
+  setLedgerChoices(ledger, eligiblePostingLedgers(), "", "Select a ledger");
   journalLines.append(line);
   updateJournalControls();
   return ledger;
@@ -147,6 +151,12 @@ function readJournalLines() {
     ledger_id: Number(journalControl(line, "ledger").value),
     side: journalControl(line, "side").value,
     amount: journalControl(line, "amount").value.trim(),
+    narration: journalControl(line, "narration").value.trim(),
+    allocations: Array.from(line.querySelectorAll(".allocation-entry"), (allocation) => ({
+      category: allocation.querySelector("[data-category]").value.trim(),
+      centre: allocation.querySelector("[data-centre]").value.trim(),
+      amount: allocation.querySelector("[data-allocation-amount]").value.trim(),
+    })),
   }));
 }
 
@@ -159,7 +169,7 @@ function journalTotals(postings) {
 function updatePreview() {
   byId("preview-mode").textContent = kindNames[kind];
   byId("preview-date").textContent = formatDate(dateField.value);
-  if (kind === "journal") {
+  if (isLineEntry()) {
     const postings = readJournalLines();
     const { debit, credit } = journalTotals(postings);
     byId("journal-debit").textContent = money(debit);
@@ -177,32 +187,60 @@ function updatePreview() {
   document.querySelectorAll(".preview-amount").forEach((target) => { target.textContent = amount ? money(amount) : "—"; });
 }
 
+function isLineEntry() {
+  return kind === "journal" || kind === "contra" || compoundCheckbox.checked;
+}
+
+function eligiblePostingLedgers() {
+  return kind === "contra" ? ledgers.filter((ledger) => ledger.kind !== "general") : ledgers;
+}
+
 function switchKind(nextKind) {
-  if (savingVoucher || kind === nextKind) return;
+  if (savingVoucher || editingVoucher || kind === nextKind) return;
   kind = nextKind;
+  updateEntryMode();
+  status("voucher-status");
+}
+
+function updateEntryMode() {
   const receipt = kind === "receipt";
-  const journal = kind === "journal";
+  const lines = isLineEntry();
   for (const button of typeButtons) {
     button.setAttribute("aria-pressed", String(button.dataset.voucherKind === kind));
+    button.disabled = Boolean(editingVoucher);
   }
-  voucherForm.dataset.kind = kind;
-  cashFields.hidden = cashFields.disabled = journal;
-  journalFields.hidden = journalFields.disabled = !journal;
-  byId("cash-preview").hidden = journal;
-  byId("journal-preview").hidden = !journal;
+  voucherForm.dataset.entry = lines ? "lines" : "single";
+  byId("compound-option").hidden = kind === "journal" || kind === "contra" || Boolean(editingVoucher);
+  cashFields.hidden = cashFields.disabled = lines;
+  journalFields.hidden = journalFields.disabled = !lines;
+  byId("cash-preview").hidden = lines;
+  byId("journal-preview").hidden = !lines;
+  byId("edit-fields").hidden = !editingVoucher;
+  voucherForm.elements.edit_actor.required = Boolean(editingVoucher);
+  voucherForm.elements.edit_reason.required = Boolean(editingVoucher);
+  byId("voucher-form-title").textContent = editingVoucher ? "Edit " + editingVoucher.code : "New voucher";
+  byId("clear-voucher").textContent = editingVoucher ? "Discard edit" : "Clear form";
   byId("mode-description").textContent = kindDescriptions[kind];
   byId("cash-label").textContent = receipt ? "Received into" : "Paid from";
   byId("party-label").textContent = receipt ? "Received from / income" : "Paid to / expense";
-  voucherForm.elements.reference.placeholder = journal ? "Document or adjustment reference" : "Cheque, UTR, or document number";
-  saveButton.textContent = "Save " + kind;
-  status("voucher-status");
+  voucherForm.elements.reference.placeholder = kind === "journal" || kind === "contra"
+    ? "Document or adjustment reference" : "Cheque, UTR, or document number";
+  saveButton.textContent = editingVoucher ? "Save revision" : "Save " + kind;
+  updatePostingChoices();
   updateSaveAvailability();
   updatePreview();
 }
 
 function updateSaveAvailability() {
-  const ready = kind === "journal" ? ledgers.length > 0 : ledgers.some((ledger) => ledger.kind === "general");
+  const ready = isLineEntry() ? eligiblePostingLedgers().length > 0 : ledgers.some((ledger) => ledger.kind === "general");
   saveButton.disabled = savingVoucher || !ready;
+}
+
+function updatePostingChoices() {
+  for (const line of journalLines.children) {
+    const select = journalControl(line, "ledger");
+    setLedgerChoices(select, eligiblePostingLedgers(), select.value, "Select a ledger");
+  }
 }
 
 function setLedgerChoices(select, options, selected, emptyLabel) {
@@ -219,20 +257,18 @@ function showLedgers(preferredOther = otherSelect.value) {
 
   setLedgerChoices(cashSelect, cashLedgers, cashSelect.value || String(defaultCash?.id), "Select cash or bank");
   setLedgerChoices(otherSelect, otherLedgers, preferredOther, otherLedgers.length ? "Select a ledger" : "Add a ledger first");
-  for (const line of journalLines.children) {
-    const select = journalControl(line, "ledger");
-    setLedgerChoices(select, ledgers, select.value, "Select a ledger");
-  }
+  updatePostingChoices();
 
   const list = byId("ledger-list");
   list.replaceChildren();
   for (const ledger of ledgers) {
     const item = element("li");
-    item.append(element("span", ledger.name), element("span", ledgerKindNames[ledger.kind]));
+    item.append(element("span", ledger.name), element("span", ledger.group ?? ledgerKindNames[ledger.kind]));
     list.append(item);
   }
   updateSaveAvailability();
   updatePreview();
+  window.dispatchEvent(new Event("ledgers-updated"));
 }
 
 async function loadLedgers() {
@@ -244,12 +280,14 @@ async function loadLedgers() {
 
 function resetVoucher({ preserveCash = false } = {}) {
   const cash = cashSelect.value;
+  editingVoucher = undefined;
   voucherForm.reset();
   resetJournalLines();
   if (preserveCash) cashSelect.value = cash;
   dateField.value = localDate();
   requestId = undefined;
   showLedgers();
+  updateEntryMode();
 }
 
 function openLedgers(mode) {
@@ -275,6 +313,7 @@ ledgerForm.addEventListener("submit", async (event) => {
     const ledger = await api("/api/ledgers", {
       name: ledgerForm.elements.name.value,
       kind: ledgerForm.elements.kind.value,
+      group_id: Number(ledgerForm.elements.group_id.value) || null,
     });
     ledgers = ledgers.filter((existing) => existing.id !== ledger.id);
     ledgers.push(ledger);
@@ -287,7 +326,7 @@ ledgerForm.addEventListener("submit", async (event) => {
       } else {
         const emptyLedger = Array.from(journalLines.querySelectorAll('[data-journal="ledger"]'))
           .find((select) => !select.value);
-        if (emptyLedger) {
+        if (emptyLedger && eligiblePostingLedgers().some((item) => item.id === ledger.id)) {
           emptyLedger.value = String(ledger.id);
           emptyLedger.focus();
           updatePreview();
@@ -309,14 +348,14 @@ ledgerForm.addEventListener("submit", async (event) => {
 voucherForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (saveButton.disabled || savingVoucher) return;
-  const values = Object.fromEntries(new FormData(voucherForm));
+  const { edit_actor, edit_reason, ...values } = Object.fromEntries(new FormData(voucherForm));
   requestId ??= crypto.randomUUID();
   const payload = {
     ...values,
     kind,
     request_id: requestId,
   };
-  if (kind === "journal") {
+  if (isLineEntry()) {
     const postings = readJournalLines();
     const invalid = postings.findIndex((posting) => !draftPaise(posting.amount));
     if (invalid !== -1) {
@@ -326,7 +365,11 @@ voucherForm.addEventListener("submit", async (event) => {
     }
     const { debit, credit } = journalTotals(postings);
     if (debit !== credit) {
-      status("voucher-status", "Journal debits and credits must match.", true);
+      status("voucher-status", (kind === "journal" ? "Journal" : "Voucher") + " debits and credits must match.", true);
+      return;
+    }
+    if (postings.some((line) => line.allocations.some((a) => !a.category || !a.centre || !draftPaise(a.amount)))) {
+      status("voucher-status", "Complete each cost allocation with a category, centre, and positive amount.", true);
       return;
     }
     payload.postings = postings;
@@ -341,7 +384,11 @@ voucherForm.addEventListener("submit", async (event) => {
   byId("draft-status").textContent = "Saving…";
 
   try {
-    const voucher = await api("/api/vouchers", payload);
+    const voucher = editingVoucher
+      ? await api("/api/vouchers/" + editingVoucher.id + "/changes", {
+          expected_revision: editingVoucher.revision, actor: edit_actor, reason: edit_reason, voucher: payload,
+        })
+      : await api("/api/vouchers", payload);
     resetVoucher({ preserveCash: true });
     const notice = status("voucher-status", voucher.code + " saved. ");
     notice.append(voucherButton(voucher.id, "View voucher"));
@@ -370,13 +417,21 @@ function voucherButton(id, label) {
 }
 
 function showVoucher(voucher) {
-  byId("detail-title").textContent = kindNames[voucher.kind] + " " + voucher.code;
+  displayedVoucher = voucher;
+  byId("detail-title").textContent = (voucher.type_name ?? kindNames[voucher.kind]) + " " + voucher.code;
+  byId("start-cancellation").hidden = byId("edit-voucher").hidden = voucher.status !== "posted" || Boolean(voucher.source_guid);
+  byId("cancel-voucher-form").hidden = true;
+  byId("cancel-voucher-form").reset();
+  byId("voucher-history").hidden = true;
+  status("voucher-detail-status");
   byId("detail-subtitle").textContent = formatDate(voucher.date);
   const fields = byId("detail-fields");
   fields.replaceChildren();
   const details = [
     ["Cash / bank", voucher.cash_account],
     ["Amount", money(voucher.amount_paise)],
+    ["Status", voucher.status],
+    ["Series", voucher.series],
     ["Reference", voucher.reference],
     ["Narration", voucher.narration],
   ];
@@ -386,24 +441,131 @@ function showVoucher(voucher) {
     detail.append(element("dt", label), element("dd", value));
     fields.append(detail);
   }
-  const postingRows = byId("detail-postings");
-  postingRows.replaceChildren();
-  const postings = voucher.postings ?? [
-    { ledger: voucher.debit, side: "debit", amount_paise: voucher.amount_paise },
-    { ledger: voucher.credit, side: "credit", amount_paise: voucher.amount_paise },
-  ];
+  renderPostingRows(byId("detail-postings"), voucher.postings ?? []);
+  if (!detailDialog.open) detailDialog.showModal();
+}
+
+function renderPostingRows(target, postings) {
+  target.replaceChildren();
   for (const posting of postings) {
     const row = element("tr");
     const amount = money(posting.amount_paise);
+    const ledger = element("td", posting.ledger);
+    if (posting.narration) ledger.append(element("small", posting.narration, "posting-note"));
+    for (const allocation of posting.allocations ?? []) {
+      ledger.append(element("small", allocation.category + " / " + allocation.centre + " · " + money(allocation.amount_paise), "posting-note"));
+    }
     row.append(
-      element("td", posting.ledger),
+      ledger,
       element("td", posting.side === "debit" ? amount : "—"),
       element("td", posting.side === "credit" ? amount : "—"),
     );
-    postingRows.append(row);
+    target.append(row);
   }
-  if (!detailDialog.open) detailDialog.showModal();
 }
+
+function amountText(paise) {
+  return (BigInt(paise) / 100n).toString() + "." + (BigInt(paise) % 100n).toString().padStart(2, "0");
+}
+
+function addAllocation(line, initial) {
+  const row = byId("allocation-template").content.firstElementChild.cloneNode(true);
+  if (initial) {
+    row.querySelector("[data-category]").value = initial.category;
+    row.querySelector("[data-centre]").value = initial.centre;
+    row.querySelector("[data-allocation-amount]").value = amountText(initial.amount_paise);
+  }
+  line.querySelector(".allocations").append(row);
+  return row;
+}
+
+function editDisplayedVoucher() {
+  const voucher = displayedVoucher;
+  if (!voucher || voucher.status !== "posted" || voucher.source_guid || savingVoucher) return;
+  resetVoucher();
+  switchKind(voucher.kind);
+  editingVoucher = voucher;
+  compoundCheckbox.checked = true;
+  journalLines.replaceChildren();
+  for (const posting of voucher.postings) {
+    const ledger = addJournalLine(posting.side);
+    const line = ledger.closest(".journal-line");
+    ledger.value = String(posting.ledger_id);
+    journalControl(line, "amount").value = amountText(posting.amount_paise);
+    journalControl(line, "narration").value = posting.narration;
+    for (const allocation of posting.allocations) addAllocation(line, allocation);
+  }
+  dateField.value = voucher.date;
+  voucherForm.elements.reference.value = voucher.reference;
+  voucherForm.elements.narration.value = voucher.narration;
+  detailDialog.close();
+  location.hash = "entry";
+  updateEntryMode();
+  dateField.focus();
+}
+
+byId("edit-voucher").addEventListener("click", editDisplayedVoucher);
+byId("start-cancellation").addEventListener("click", () => {
+  const form = byId("cancel-voucher-form");
+  form.hidden = false;
+  form.elements.actor.focus();
+});
+byId("cancel-voucher-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form));
+  const voucher = displayedVoucher;
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    const updated = await api("/api/vouchers/" + voucher.id + "/changes", {
+      ...data, expected_revision: voucher.revision,
+    });
+    if (displayedVoucher === voucher && detailDialog.open) {
+      showVoucher(updated);
+      status("voucher-detail-status", "Voucher cancelled.");
+    }
+    void refreshRegister();
+  } catch (error) {
+    status("voucher-detail-status", error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+byId("show-voucher-history").addEventListener("click", async () => {
+  const voucher = displayedVoucher;
+  const target = byId("voucher-history");
+  if (!target.hidden) { target.hidden = true; return; }
+  try {
+    const path = "/api/vouchers/" + voucher.id + "/changes";
+    const events = await api(path);
+    if (displayedVoucher !== voucher) return;
+    target.replaceChildren(element("h3", "Voucher history"));
+    for (const entry of events) {
+      const record = element("div", undefined, "history-event");
+      const button = element("button", "Revision " + entry.revision + " · " + entry.action, "voucher-link");
+      button.type = "button";
+      const preview = element("div");
+      preview.hidden = true;
+      button.addEventListener("click", async () => {
+        if (!preview.hidden) { preview.hidden = true; return; }
+        try {
+          const version = await api(path + "/" + entry.revision);
+          const table = element("table", undefined, "detail-table");
+          const header = table.createTHead().insertRow();
+          for (const label of ["Ledger", "Debit", "Credit"]) header.append(element("th", label));
+          renderPostingRows(table.createTBody(), version.postings ?? []);
+          preview.replaceChildren(element("p", "Voucher date " + formatDate(version.date)), table);
+          preview.hidden = false;
+        } catch (error) { status("voucher-detail-status", error.message, true); }
+      });
+      record.append(button, element("p", entry.actor + " · " + entry.recorded_at), element("p", entry.reason), preview);
+      target.append(record);
+    }
+    target.hidden = false;
+  } catch (error) { status("voucher-detail-status", error.message, true); }
+});
 
 function renderRegister(register) {
   const rows = byId("register-rows");
@@ -419,9 +581,11 @@ function renderRegister(register) {
     const row = rows.insertRow();
     row.insertCell().append(voucherButton(voucher.id, voucher.code));
     row.insertCell().textContent = formatDate(voucher.date);
-    row.insertCell().append(element("span", kindNames[voucher.kind], "kind-tag " + voucher.kind));
+    const typeCell = row.insertCell();
+    typeCell.append(element("span", voucher.type_name ?? kindNames[voucher.kind], "kind-tag " + voucher.kind));
+    if (voucher.status && voucher.status !== "posted") typeCell.append(element("small", voucher.status, "posting-note"));
     const particulars = row.insertCell();
-    if (voucher.kind === "journal") {
+    if (!voucher.cash_account || voucher.source_guid) {
       particulars.append(element("span", voucher.other_account, "journal-particulars"));
     } else {
       particulars.textContent = voucher.other_account;
@@ -494,6 +658,16 @@ addLineButton.addEventListener("click", () => {
   updatePreview();
 });
 journalLines.addEventListener("click", (event) => {
+  const allocationButton = event.target.closest("[data-add-allocation]");
+  if (allocationButton) {
+    addAllocation(allocationButton.closest(".journal-line")).querySelector("input").focus();
+    return;
+  }
+  const removeAllocation = event.target.closest("[data-remove-allocation]");
+  if (removeAllocation) {
+    removeAllocation.closest(".allocation-entry").remove();
+    return;
+  }
   const remove = event.target.closest('[data-journal="remove"]');
   if (!remove) return;
   const line = remove.closest(".journal-line");
@@ -503,13 +677,14 @@ journalLines.addEventListener("click", (event) => {
   updatePreview();
   (next ? journalControl(next, "ledger") : addLineButton).focus();
 });
+compoundCheckbox.addEventListener("change", updateEntryMode);
 byId("clear-voucher").addEventListener("click", () => {
   status("voucher-status");
   resetVoucher();
   dateField.focus();
 });
 voucherForm.addEventListener("input", () => {
-  if (kind === "journal" && byId("voucher-status").classList.contains("error")) status("voucher-status");
+  if (isLineEntry() && byId("voucher-status").classList.contains("error")) status("voucher-status");
   updatePreview();
 });
 
@@ -523,7 +698,7 @@ ledgerDialog.addEventListener("cancel", (event) => {
 });
 
 function updateNavigation() {
-  const section = location.hash === "#register" ? "register" : "entry";
+  const section = location.hash.slice(1) || "entry";
   for (const link of document.querySelectorAll("[data-section]")) {
     const active = link.dataset.section === section;
     link.classList.toggle("active", active);
@@ -538,7 +713,7 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     switchKind(shortcutKinds[event.key]);
     location.hash = "entry";
-    (kind === "journal" ? journalControl(journalLines.firstElementChild, "ledger") : amountField).focus();
+    (isLineEntry() ? journalControl(journalLines.firstElementChild, "ledger") : amountField).focus();
   } else if ((event.ctrlKey || event.metaKey) && event.key === "Enter"
       && voucherForm.contains(document.activeElement)) {
     event.preventDefault();

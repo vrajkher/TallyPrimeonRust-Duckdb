@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use chrono::{Datelike, NaiveDate};
 use duckdb::{Connection, OptionalExt, Row, Transaction, params};
@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 const PAGE_SIZE: u32 = 25;
-const MAX_JOURNAL_LINES: usize = 50;
+const MAX_POSTING_LINES: usize = 50;
 const REGISTER_FILTER: &str = "
     WHERE ($1::VARCHAR IS NULL OR kind = $1)
       AND ($2::DATE IS NULL OR voucher_date >= $2)
@@ -16,11 +16,12 @@ const REGISTER_FILTER: &str = "
         OR contains(lower(other_account), lower($4))
         OR contains(lower(reference), lower($4))
         OR contains(lower(narration), lower($4))
-        OR contains(lower(code), lower($4)))";
-
+        OR contains(lower(code), lower($4))
+        OR contains(lower(type_name), lower($4)))
+      AND ($5::VARCHAR IS NULL OR status = $5)";
 const VOUCHER_COLUMNS: &str = "
-    id, kind, code, voucher_date::VARCHAR, cash_account, other_account,
-    debit, credit, amount_paise::VARCHAR, reference, narration";
+    id, kind, code, voucher_date::VARCHAR, cash_account, other_account, debit, credit,
+    amount_paise::VARCHAR, reference, narration, type_name, series, status, revision, source_guid";
 
 #[derive(Debug)]
 pub enum StoreError {
@@ -37,7 +38,7 @@ impl From<duckdb::Error> for StoreError {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LedgerKind {
     Cash,
@@ -46,7 +47,7 @@ pub enum LedgerKind {
 }
 
 impl LedgerKind {
-    fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Cash => "cash",
             Self::Bank => "bank",
@@ -61,15 +62,23 @@ pub enum VoucherKind {
     Payment,
     Receipt,
     Journal,
+    Contra,
+    Other,
 }
 
 impl VoucherKind {
-    fn as_str(self) -> &'static str {
+    fn labels(self) -> (&'static str, &'static str, &'static str) {
         match self {
-            Self::Payment => "payment",
-            Self::Receipt => "receipt",
-            Self::Journal => "journal",
+            Self::Payment => ("payment", "Payment", "PAY"),
+            Self::Receipt => ("receipt", "Receipt", "REC"),
+            Self::Journal => ("journal", "Journal", "JRN"),
+            Self::Contra => ("contra", "Contra", "CON"),
+            Self::Other => ("other", "Other", "OTH"),
         }
+    }
+
+    fn as_str(self) -> &'static str {
+        self.labels().0
     }
 }
 
@@ -77,18 +86,21 @@ impl VoucherKind {
 pub struct NewLedger {
     name: String,
     kind: LedgerKind,
+    group_id: Option<i64>,
 }
 
 #[derive(Serialize)]
 pub struct Ledger {
-    id: i64,
+    pub(crate) id: i64,
     name: String,
     kind: String,
+    group: Option<String>,
+    group_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
 pub struct NewVoucher {
-    request_id: String,
+    pub(crate) request_id: String,
     date: String,
     #[serde(default)]
     reference: String,
@@ -101,19 +113,17 @@ pub struct NewVoucher {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum VoucherEntry {
-    Payment(CashVoucher),
-    Receipt(CashVoucher),
+    Payment(CashForm),
+    Receipt(CashForm),
     Journal { postings: Vec<NewPosting> },
+    Contra { postings: Vec<NewPosting> },
 }
 
-impl VoucherEntry {
-    fn kind(&self) -> VoucherKind {
-        match self {
-            Self::Payment(_) => VoucherKind::Payment,
-            Self::Receipt(_) => VoucherKind::Receipt,
-            Self::Journal { .. } => VoucherKind::Journal,
-        }
-    }
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CashForm {
+    Compound { postings: Vec<NewPosting> },
+    Single(CashVoucher),
 }
 
 #[derive(Deserialize)]
@@ -128,20 +138,77 @@ struct NewPosting {
     ledger_id: i64,
     side: PostingSide,
     amount: String,
+    #[serde(default)]
+    narration: String,
+    #[serde(default)]
+    allocations: Vec<NewAllocation>,
 }
 
 #[derive(Deserialize)]
+struct NewAllocation {
+    category: String,
+    centre: String,
+    amount: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-enum PostingSide {
+pub(crate) enum PostingSide {
     Debit,
     Credit,
 }
 
-struct VoucherDetails<'a> {
-    request_id: String,
-    date: &'a str,
-    reference: &'a str,
-    narration: &'a str,
+impl PostingSide {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Debit => "debit",
+            Self::Credit => "credit",
+        }
+    }
+
+    pub(crate) fn from_db(side: &str) -> Self {
+        if side == "debit" {
+            Self::Debit
+        } else {
+            Self::Credit
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Posting {
+    pub(crate) ledger_id: i64,
+    pub(crate) side: PostingSide,
+    pub(crate) amount: i64,
+    pub(crate) narration: String,
+    pub(crate) allocations: Vec<Allocation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Allocation {
+    pub(crate) category: String,
+    pub(crate) centre: String,
+    pub(crate) amount: i64,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct Revision {
+    pub(crate) code: String,
+    pub(crate) type_name: String,
+    pub(crate) series: String,
+    pub(crate) date: String,
+    pub(crate) status: String,
+    pub(crate) cash_ledger_id: Option<i64>,
+    pub(crate) reference: String,
+    pub(crate) narration: String,
+    pub(crate) source_revision: Option<i64>,
+    pub(crate) postings: Vec<Posting>,
+}
+
+pub(crate) struct Audit<'a> {
+    pub(crate) actor: &'a str,
+    pub(crate) action: &'a str,
+    pub(crate) reason: &'a str,
 }
 
 #[derive(Debug, Serialize)]
@@ -157,6 +224,11 @@ pub struct Voucher {
     amount_paise: String,
     reference: String,
     narration: String,
+    type_name: String,
+    series: String,
+    status: String,
+    revision: i32,
+    source_guid: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     postings: Vec<VoucherPosting>,
 }
@@ -167,6 +239,15 @@ struct VoucherPosting {
     ledger: String,
     side: String,
     amount_paise: String,
+    narration: String,
+    allocations: Vec<VoucherAllocation>,
+}
+
+#[derive(Debug, Serialize)]
+struct VoucherAllocation {
+    category: String,
+    centre: String,
+    amount_paise: String,
 }
 
 #[derive(Default, Deserialize)]
@@ -175,6 +256,7 @@ pub struct RegisterFilter {
     from: Option<String>,
     to: Option<String>,
     q: Option<String>,
+    status: Option<String>,
     page: Option<u32>,
 }
 
@@ -188,8 +270,29 @@ pub struct Register {
     payment_paise: String,
 }
 
+#[derive(Deserialize)]
+pub struct VoucherChange {
+    expected_revision: i32,
+    actor: String,
+    reason: String,
+    voucher: Option<NewVoucher>,
+}
+
+#[derive(Serialize)]
+pub struct VoucherEvent {
+    revision: i32,
+    date: String,
+    status: String,
+    actor: String,
+    action: String,
+    reason: String,
+    recorded_at: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    postings: Vec<VoucherPosting>,
+}
+
 pub struct Store {
-    connection: Connection,
+    pub(crate) connection: Connection,
 }
 
 impl Store {
@@ -197,51 +300,67 @@ impl Store {
         Self::initialize(Connection::open(path)?)
     }
 
-    fn initialize(mut connection: Connection) -> duckdb::Result<Self> {
+    pub(crate) fn initialize(mut connection: Connection) -> duckdb::Result<Self> {
         let tx = connection.transaction()?;
-        tx.execute_batch(include_str!("schema.sql"))?;
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)",
+        )?;
+        let migrated: bool = tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 1)",
+            [],
+            |row| row.get(0),
+        )?;
+        if !migrated {
+            tx.execute_batch(include_str!("legacy.sql"))?;
+            tx.execute_batch(include_str!("schema.sql"))?;
+            tx.execute_batch(include_str!("migrate_v1.sql"))?;
+            tx.execute("INSERT INTO schema_migrations VALUES (1)", [])?;
+        }
         tx.commit()?;
         Ok(Self { connection })
     }
 
     pub fn ledgers(&self) -> Result<Vec<Ledger>, StoreError> {
-        let mut stmt = self
-            .connection
-            .prepare("SELECT id, name, kind FROM ledgers ORDER BY name_key")?;
-        let ledgers = stmt.query_map([], |row| {
-            Ok(Ledger {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                kind: row.get(2)?,
-            })
-        })?;
-        Ok(ledgers.collect::<duckdb::Result<_>>()?)
+        let mut stmt = self.connection.prepare(
+            "SELECT l.id, l.name, l.kind, g.name, g.id FROM ledgers l
+             LEFT JOIN ledger_groups lg ON lg.ledger_id = l.id
+             LEFT JOIN account_groups g ON g.id = lg.group_id ORDER BY l.name_key",
+        )?;
+        Ok(stmt
+            .query_map([], ledger_row)?
+            .collect::<duckdb::Result<_>>()?)
     }
 
-    pub fn add_ledger(&self, entry: NewLedger) -> Result<Ledger, StoreError> {
-        let name = validated_text(&entry.name, "Ledger name", 100)?;
-        if name.is_empty() {
-            return Err(StoreError::Invalid("Enter a ledger name.".into()));
-        }
-        let name_key = name.to_lowercase();
+    pub fn add_ledger(&mut self, entry: NewLedger) -> Result<Ledger, StoreError> {
+        let name = required_text(&entry.name, "Ledger name", 100)?;
         let kind = entry.kind.as_str();
-        let id = self
-            .connection
-            .query_row(
-                "INSERT INTO ledgers (name, name_key, kind) VALUES (?, ?, ?)
-                 ON CONFLICT (name_key) DO NOTHING RETURNING id",
-                params![name, name_key, kind],
-                |row| row.get(0),
-            )
-            .optional()?
-            .ok_or_else(|| {
-                StoreError::Conflict("A ledger with that name already exists.".into())
-            })?;
-
+        let tx = self.connection.transaction()?;
+        let group = entry
+            .group_id
+            .map(|group_id| {
+                tx.query_row(
+                    "SELECT name FROM account_groups WHERE id = ?",
+                    [group_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| StoreError::Invalid("Choose an existing group.".into()))
+            })
+            .transpose()?;
+        let id = insert_ledger(&tx, name, kind)?;
+        if let Some(group_id) = entry.group_id {
+            tx.execute(
+                "INSERT INTO ledger_groups VALUES (?, ?)",
+                params![id, group_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(Ledger {
             id,
             name: name.into(),
             kind: kind.into(),
+            group,
+            group_id: entry.group_id,
         })
     }
 
@@ -249,54 +368,142 @@ impl Store {
         read_voucher(&self.connection, id)
     }
 
-    pub fn add_voucher(&mut self, entry: NewVoucher) -> Result<(Voucher, bool), StoreError> {
-        let details = VoucherDetails {
-            request_id: Uuid::parse_str(&entry.request_id)
-                .map_err(|_| StoreError::Invalid("Invalid voucher request ID.".into()))?
-                .to_string(),
-            date: validated_date(&entry.date)?,
-            reference: validated_text(&entry.reference, "Reference", 100)?,
-            narration: validated_text(&entry.narration, "Narration", 500)?,
-        };
-        let kind = entry.entry.kind().as_str();
-        let tx = self.connection.transaction()?;
-        let existing: Option<(i64, bool)> = tx
-            .query_row(
-                "SELECT id, kind = $2 AND voucher_date = $3::DATE
-                        AND reference = $4 AND narration = $5
-                 FROM (
-                    SELECT id, kind, voucher_date, reference, narration
-                    FROM vouchers WHERE request_id = $1::UUID
-                    UNION ALL
-                    SELECT id, 'journal', voucher_date, reference, narration
-                    FROM journal_vouchers WHERE request_id = $1::UUID
-                 ) AS existing",
-                params![
-                    details.request_id,
-                    kind,
-                    details.date,
-                    details.reference,
-                    details.narration
-                ],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        if matches!(existing, Some((_, false))) {
-            return Err(request_conflict());
+    pub fn history(&self, id: i64) -> Result<Vec<VoucherEvent>, StoreError> {
+        let mut stmt = self.connection.prepare(
+            "SELECT revision, voucher_date::VARCHAR, status, actor, action, reason, recorded_at::VARCHAR
+             FROM voucher_revisions WHERE voucher_id = ? ORDER BY revision DESC"
+        )?;
+        let events = stmt
+            .query_map([id], |row| {
+                Ok(VoucherEvent {
+                    revision: row.get(0)?,
+                    date: row.get(1)?,
+                    status: row.get(2)?,
+                    actor: row.get(3)?,
+                    action: row.get(4)?,
+                    reason: row.get(5)?,
+                    recorded_at: row.get(6)?,
+                    postings: vec![],
+                })
+            })?
+            .collect::<duckdb::Result<Vec<_>>>()?;
+        if events.is_empty() {
+            return Err(StoreError::Missing("Voucher not found.".into()));
         }
-        let existing_id = existing.map(|(id, _)| id);
+        Ok(events)
+    }
 
-        let id = match entry.entry {
-            VoucherEntry::Payment(cash) | VoucherEntry::Receipt(cash) => {
-                save_cash_voucher(&tx, &details, kind, cash, existing_id)?
+    pub fn history_revision(&self, id: i64, revision: i32) -> Result<VoucherEvent, StoreError> {
+        let mut event = self
+            .history(id)?
+            .into_iter()
+            .find(|e| e.revision == revision)
+            .ok_or_else(|| StoreError::Missing("Revision not found.".into()))?;
+        event.postings = display_postings(&self.connection, id, revision)?;
+        Ok(event)
+    }
+
+    pub fn add_voucher(&mut self, entry: NewVoucher) -> Result<(Voucher, bool), StoreError> {
+        let key = request_key(&entry.request_id)?;
+        let tx = self.connection.transaction()?;
+        let (kind, mut revision) = prepare_local(&tx, entry)?;
+        let (kind_key, _, prefix) = kind.labels();
+        let existing = find_request(&tx, &key)?;
+        if let Some((id, version, saved_kind)) = existing {
+            let saved = read_revision(&tx, id, version)?;
+            revision.code.clone_from(&saved.code);
+            if saved_kind != kind_key || saved != revision {
+                return Err(StoreError::Conflict(
+                    "This request ID belongs to a different voucher.".into(),
+                ));
             }
-            VoucherEntry::Journal { postings } => {
-                save_journal(&tx, &details, postings, existing_id)?
-            }
-        };
+            return Ok((read_voucher(&tx, id)?, false));
+        }
+
+        ensure_open(&tx, &revision.date)?;
+        let (id, number): (i64, i64) = tx.query_row(
+            "INSERT INTO book_vouchers (kind, local_number)
+             SELECT ?, COALESCE(MAX(local_number), 0) + 1 FROM book_vouchers WHERE kind = ?
+             RETURNING id, local_number",
+            params![kind_key, kind_key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        revision.code = format!("{prefix}-{number:06}");
+        save_revision(
+            &tx,
+            id,
+            1,
+            Some(&key),
+            &revision,
+            Audit {
+                actor: "Local operator",
+                action: "posted",
+                reason: "",
+            },
+        )?;
         let voucher = read_voucher(&tx, id)?;
         tx.commit()?;
-        Ok((voucher, existing.is_none()))
+        Ok((voucher, true))
+    }
+
+    pub fn change_voucher(
+        &mut self,
+        id: i64,
+        change: VoucherChange,
+    ) -> Result<Voucher, StoreError> {
+        let actor = required_text(&change.actor, "Operator name", 100)?;
+        let reason = required_text(&change.reason, "Reason", 500)?;
+        let tx = self.connection.transaction()?;
+        let current = read_voucher(&tx, id)?;
+        if current.revision != change.expected_revision || current.status != "posted" {
+            return Err(StoreError::Conflict(
+                "The voucher has changed. Reopen it and check its current status.".into(),
+            ));
+        }
+        if current.source_guid.is_some() {
+            return Err(StoreError::Conflict(
+                "Import the updated source voucher to revise an imported entry.".into(),
+            ));
+        }
+        ensure_open(&tx, &current.date)?;
+        ensure_unmatched(&tx, id, current.revision)?;
+        let mut revision = read_revision(&tx, id, current.revision)?;
+        let (key, action) = if let Some(entry) = change.voucher {
+            let key = request_key(&entry.request_id)?;
+            if find_request(&tx, &key)?.is_some() {
+                return Err(StoreError::Conflict(
+                    "This change has already been submitted.".into(),
+                ));
+            }
+            let (kind, mut updated) = prepare_local(&tx, entry)?;
+            if kind.as_str() != current.kind {
+                return Err(StoreError::Invalid(
+                    "Keep the same voucher type when editing.".into(),
+                ));
+            }
+            ensure_open(&tx, &updated.date)?;
+            updated.code = revision.code;
+            revision = updated;
+            (Some(key), "edited")
+        } else {
+            revision.status = "cancelled".into();
+            (None, "cancelled")
+        };
+        save_revision(
+            &tx,
+            id,
+            current.revision + 1,
+            key.as_deref(),
+            &revision,
+            Audit {
+                actor,
+                action,
+                reason,
+            },
+        )?;
+        let voucher = read_voucher(&tx, id)?;
+        tx.commit()?;
+        Ok(voucher)
     }
 
     pub fn register(&self, filter: RegisterFilter) -> Result<Register, StoreError> {
@@ -308,6 +515,10 @@ impl Store {
                 "The start date must be on or before the end date.".into(),
             ));
         }
+        let status = filter.status.as_deref();
+        if status.is_some_and(|value| !matches!(value, "posted" | "cancelled" | "optional")) {
+            return Err(StoreError::Invalid("Choose a valid voucher status.".into()));
+        }
         let q = filter
             .q
             .as_deref()
@@ -316,26 +527,24 @@ impl Store {
             .filter(|text| !text.is_empty());
         let page = filter.page.unwrap_or(1).max(1);
         let offset = i64::from(page - 1) * i64::from(PAGE_SIZE);
-
         let (count, receipt_paise, payment_paise) = self.connection.query_row(
-            &format!(
-                "SELECT COUNT(*),
-                    COALESCE(SUM(amount_paise) FILTER (WHERE kind = 'receipt'), 0)::VARCHAR,
-                    COALESCE(SUM(amount_paise) FILTER (WHERE kind = 'payment'), 0)::VARCHAR
-                 FROM voucher_register {REGISTER_FILTER}"
-            ),
-            params![kind, from, to, q],
+            &format!("SELECT COUNT(*),
+                    COALESCE(SUM(amount_paise) FILTER (WHERE kind = 'receipt' AND status = 'posted'), 0)::VARCHAR,
+                    COALESCE(SUM(amount_paise) FILTER (WHERE kind = 'payment' AND status = 'posted'), 0)::VARCHAR
+                 FROM book_register {REGISTER_FILTER}"),
+            params![kind, from, to, q, status],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )?;
-
         let mut stmt = self.connection.prepare(&format!(
-            "SELECT {VOUCHER_COLUMNS} FROM voucher_register {REGISTER_FILTER}
-             ORDER BY voucher_date DESC, id DESC LIMIT $5 OFFSET $6"
+            "SELECT {VOUCHER_COLUMNS} FROM book_register {REGISTER_FILTER}
+             ORDER BY voucher_date DESC, id DESC LIMIT $6 OFFSET $7"
         ))?;
         let rows = stmt
-            .query_map(params![kind, from, to, q, PAGE_SIZE, offset], voucher_row)?
+            .query_map(
+                params![kind, from, to, q, status, PAGE_SIZE, offset],
+                voucher_row,
+            )?
             .collect::<duckdb::Result<_>>()?;
-
         Ok(Register {
             rows,
             page,
@@ -347,182 +556,406 @@ impl Store {
     }
 }
 
-fn save_cash_voucher(
-    tx: &Transaction<'_>,
-    details: &VoucherDetails<'_>,
-    kind: &str,
-    entry: CashVoucher,
-    existing_id: Option<i64>,
-) -> Result<i64, StoreError> {
-    let amount_paise = parse_amount(&entry.amount)?;
-    if let Some(id) = existing_id {
-        let matches: bool = tx.query_row(
-            "SELECT cash_ledger_id = ? AND other_ledger_id = ? AND amount_paise = ?
-             FROM vouchers WHERE id = ?",
-            params![
-                entry.cash_ledger_id,
-                entry.other_ledger_id,
-                amount_paise,
-                id
-            ],
-            |row| row.get(0),
-        )?;
-        return if matches {
-            Ok(id)
-        } else {
-            Err(request_conflict())
-        };
-    }
-
-    let cash_kind = ledger_kind(tx, entry.cash_ledger_id)?;
-    if !matches!(cash_kind.as_deref(), Some("cash" | "bank")) {
-        return Err(StoreError::Invalid("Choose a cash or bank ledger.".into()));
-    }
-    let other_kind = ledger_kind(tx, entry.other_ledger_id)?;
-    if other_kind.as_deref() != Some("general") {
-        return Err(StoreError::Invalid(
-            "Choose a party, expense, income, or other general ledger.".into(),
-        ));
-    }
-
-    Ok(tx.query_row(
-        "INSERT INTO vouchers (
-            request_id, kind, number, voucher_date, cash_ledger_id, other_ledger_id,
-            amount_paise, reference, narration
-         ) SELECT ?::UUID, ?, COALESCE(MAX(number), 0) + 1, ?::DATE, ?, ?, ?, ?, ?
-           FROM vouchers WHERE kind = ?
-         RETURNING id",
-        params![
-            details.request_id,
-            kind,
-            details.date,
-            entry.cash_ledger_id,
-            entry.other_ledger_id,
-            amount_paise,
-            details.reference,
-            details.narration,
-            kind
-        ],
-        |row| row.get(0),
-    )?)
+fn request_key(value: &str) -> Result<String, StoreError> {
+    Uuid::parse_str(value)
+        .map(|key| key.to_string())
+        .map_err(|_| StoreError::Invalid("Invalid voucher request ID.".into()))
 }
 
-fn save_journal(
-    tx: &Transaction<'_>,
-    details: &VoucherDetails<'_>,
-    postings: Vec<NewPosting>,
-    existing_id: Option<i64>,
-) -> Result<i64, StoreError> {
-    if !(2..=MAX_JOURNAL_LINES).contains(&postings.len()) {
+fn find_request(connection: &Connection, key: &str) -> duckdb::Result<Option<(i64, i32, String)>> {
+    connection
+        .query_row(
+            "SELECT r.voucher_id, r.revision, v.kind FROM voucher_revisions r
+         JOIN book_vouchers v ON v.id = r.voucher_id WHERE r.request_key = ?",
+            [key],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+}
+
+pub(crate) fn ensure_open(connection: &Connection, date: &str) -> Result<(), StoreError> {
+    let closed: bool = connection.query_row(
+        "SELECT COALESCE(?::DATE <= closed_through, false) FROM book_settings WHERE id = 1",
+        [date],
+        |row| row.get(0),
+    )?;
+    if closed {
+        return Err(StoreError::Conflict(
+            "This accounting period is closed.".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn ensure_unmatched(
+    connection: &Connection,
+    id: i64,
+    revision: i32,
+) -> Result<(), StoreError> {
+    let matched: bool = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM bank_match_postings p JOIN active_bank_matches m
+          ON m.id = p.match_id WHERE p.voucher_id = ? AND p.revision = ?)",
+        params![id, revision],
+        |row| row.get(0),
+    )?;
+    if matched {
+        return Err(StoreError::Conflict(
+            "Undo the bank match before changing this voucher.".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn prepare_local(
+    connection: &Connection,
+    entry: NewVoucher,
+) -> Result<(VoucherKind, Revision), StoreError> {
+    let (kind, cash, compound) = match entry.entry {
+        VoucherEntry::Payment(CashForm::Single(form)) => (VoucherKind::Payment, Some(form), vec![]),
+        VoucherEntry::Receipt(CashForm::Single(form)) => (VoucherKind::Receipt, Some(form), vec![]),
+        VoucherEntry::Payment(CashForm::Compound { postings }) => {
+            (VoucherKind::Payment, None, postings)
+        }
+        VoucherEntry::Receipt(CashForm::Compound { postings }) => {
+            (VoucherKind::Receipt, None, postings)
+        }
+        VoucherEntry::Journal { postings } => (VoucherKind::Journal, None, postings),
+        VoucherEntry::Contra { postings } => (VoucherKind::Contra, None, postings),
+    };
+    let (cash_ledger_id, postings) = if let Some(cash) = cash {
+        if !is_liquid(ledger_kind(connection, cash.cash_ledger_id)?.as_deref()) {
+            return Err(StoreError::Invalid("Choose a cash or bank ledger.".into()));
+        }
+        if ledger_kind(connection, cash.other_ledger_id)?.as_deref() != Some("general") {
+            return Err(StoreError::Invalid(
+                "Choose a party, expense, income, or other general ledger.".into(),
+            ));
+        }
+        let amount = parse_amount(&cash.amount)?;
+        let (debit, credit) = if matches!(kind, VoucherKind::Payment) {
+            (cash.other_ledger_id, cash.cash_ledger_id)
+        } else {
+            (cash.cash_ledger_id, cash.other_ledger_id)
+        };
+        (
+            Some(cash.cash_ledger_id),
+            vec![
+                Posting {
+                    ledger_id: debit,
+                    side: PostingSide::Debit,
+                    amount,
+                    narration: String::new(),
+                    allocations: vec![],
+                },
+                Posting {
+                    ledger_id: credit,
+                    side: PostingSide::Credit,
+                    amount,
+                    narration: String::new(),
+                    allocations: vec![],
+                },
+            ],
+        )
+    } else {
+        prepare_compound(connection, kind, compound)?
+    };
+    Ok((
+        kind,
+        Revision {
+            code: String::new(),
+            type_name: kind.labels().1.into(),
+            series: "Default".into(),
+            date: validated_date(&entry.date)?.into(),
+            status: "posted".into(),
+            cash_ledger_id,
+            reference: validated_text(&entry.reference, "Reference", 100)?.into(),
+            narration: validated_text(&entry.narration, "Narration", 500)?.into(),
+            source_revision: None,
+            postings,
+        },
+    ))
+}
+
+fn is_liquid(kind: Option<&str>) -> bool {
+    matches!(kind, Some("cash" | "bank"))
+}
+
+fn prepare_compound(
+    connection: &Connection,
+    kind: VoucherKind,
+    entries: Vec<NewPosting>,
+) -> Result<(Option<i64>, Vec<Posting>), StoreError> {
+    if !(2..=MAX_POSTING_LINES).contains(&entries.len()) {
         return Err(StoreError::Invalid(format!(
-            "Enter 2 to {MAX_JOURNAL_LINES} journal lines."
+            "Enter 2 to {MAX_POSTING_LINES} posting lines."
         )));
     }
-
-    let mut debit_total = 0i128;
-    let mut credit_total = 0i128;
-    let mut lines = Vec::with_capacity(postings.len());
-    for (number, posting) in (1..).zip(postings) {
-        let amount = parse_amount(&posting.amount).map_err(|_| {
-            StoreError::Invalid(format!(
-                "Enter a positive amount with up to two decimal places on line {number}."
-            ))
+    let mut liquid = HashSet::new();
+    let mut debit_ledgers = HashSet::new();
+    let mut credit_ledgers = HashSet::new();
+    let mut postings = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.into_iter().enumerate() {
+        let ledger = ledger_kind(connection, entry.ledger_id)?.ok_or_else(|| {
+            StoreError::Invalid(format!("Choose an existing ledger on line {}.", index + 1))
         })?;
-        let side = match posting.side {
-            PostingSide::Debit => {
-                debit_total += i128::from(amount);
-                "debit"
+        let cash = is_liquid(Some(&ledger));
+        match (kind, entry.side, cash) {
+            (VoucherKind::Contra, _, false) => {
+                return Err(StoreError::Invalid(
+                    "Contra vouchers use cash and bank accounts.".into(),
+                ));
             }
-            PostingSide::Credit => {
-                credit_total += i128::from(amount);
-                "credit"
+            (VoucherKind::Payment, PostingSide::Credit, true)
+            | (VoucherKind::Receipt, PostingSide::Debit, true) => {
+                liquid.insert(entry.ledger_id);
             }
+            _ => {}
+        }
+        match entry.side {
+            PostingSide::Debit => debit_ledgers.insert(entry.ledger_id),
+            PostingSide::Credit => credit_ledgers.insert(entry.ledger_id),
         };
-        lines.push((number, posting.ledger_id, side, amount));
+        let allocations = entry
+            .allocations
+            .into_iter()
+            .map(|a| {
+                Ok(Allocation {
+                    category: required_text(&a.category, "Cost category", 100)?.into(),
+                    centre: required_text(&a.centre, "Cost centre", 100)?.into(),
+                    amount: parse_amount(&a.amount)?,
+                })
+            })
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        postings.push(Posting {
+            ledger_id: entry.ledger_id,
+            side: entry.side,
+            amount: parse_amount(&entry.amount)?,
+            narration: validated_text(&entry.narration, "Line narration", 500)?.into(),
+            allocations,
+        });
     }
-    if debit_total != credit_total {
+    if matches!(kind, VoucherKind::Contra) && !debit_ledgers.is_disjoint(&credit_ledgers) {
         return Err(StoreError::Invalid(
-            "Journal debits and credits must match.".into(),
+            "Choose distinct source and destination accounts for a contra voucher.".into(),
         ));
     }
-
-    if let Some(id) = existing_id {
-        let saved = read_journal_postings(tx, id)?;
-        let matches = saved.len() == lines.len()
-            && saved
-                .iter()
-                .zip(&lines)
-                .all(|(saved, &(_, ledger, side, amount))| {
-                    saved.ledger_id == ledger
-                        && saved.side == side
-                        && saved.amount_paise == amount.to_string()
-                });
-        return if matches {
-            Ok(id)
-        } else {
-            Err(request_conflict())
-        };
+    if matches!(kind, VoucherKind::Payment | VoucherKind::Receipt) && liquid.is_empty() {
+        return Err(StoreError::Invalid(
+            "The payment or receipt needs a cash or bank posting on the appropriate side.".into(),
+        ));
     }
-
-    for &(number, ledger, ..) in &lines {
-        if ledger_kind(tx, ledger)?.is_none() {
-            return Err(StoreError::Invalid(format!(
-                "Choose an existing ledger on line {number}."
-            )));
-        }
-    }
-
-    let id = tx.query_row(
-        "INSERT INTO journal_vouchers (request_id, number, voucher_date, amount_paise, reference, narration)
-         SELECT ?::UUID, COALESCE(MAX(number), 0) + 1, ?::DATE, ?::HUGEINT, ?, ?
-         FROM journal_vouchers RETURNING id",
-        params![details.request_id, details.date, debit_total.to_string(), details.reference, details.narration],
-        |row| row.get(0),
-    )?;
-    let mut insert = tx.prepare(
-        "INSERT INTO journal_postings (voucher_id, line_no, ledger_id, side, amount_paise)
-         VALUES (?, ?, ?, ?, ?)",
-    )?;
-    for (number, ledger, side, amount) in lines {
-        insert.execute(params![id, number, ledger, side, amount])?;
-    }
-    Ok(id)
+    Ok((
+        (liquid.len() == 1).then(|| *liquid.iter().next().unwrap()),
+        postings,
+    ))
 }
 
-fn request_conflict() -> StoreError {
-    StoreError::Conflict("This request ID is already associated with a different voucher.".into())
+pub(crate) fn validate_postings(postings: &[Posting], status: &str) -> Result<i128, StoreError> {
+    if postings.is_empty() && status == "cancelled" {
+        return Ok(0);
+    }
+    if postings.len() < 2 {
+        return Err(StoreError::Invalid(
+            "Enter at least two posting lines.".into(),
+        ));
+    }
+    let mut debit = 0i128;
+    let mut credit = 0i128;
+    for line in postings {
+        match line.side {
+            PostingSide::Debit => debit += i128::from(line.amount),
+            PostingSide::Credit => credit += i128::from(line.amount),
+        }
+        let mut categories = std::collections::HashMap::new();
+        for allocation in &line.allocations {
+            *categories
+                .entry(allocation.category.to_lowercase())
+                .or_insert(0i128) += i128::from(allocation.amount);
+        }
+        if categories
+            .values()
+            .any(|&amount| amount > i128::from(line.amount))
+        {
+            return Err(StoreError::Invalid(
+                "A cost category allocates more than its posting amount.".into(),
+            ));
+        }
+    }
+    if debit == 0 || debit != credit {
+        return Err(StoreError::Invalid(
+            "Voucher debits and credits must match.".into(),
+        ));
+    }
+    Ok(debit)
+}
+
+pub(crate) fn save_revision(
+    tx: &Transaction<'_>,
+    id: i64,
+    version: i32,
+    key: Option<&str>,
+    doc: &Revision,
+    audit: Audit<'_>,
+) -> Result<(), StoreError> {
+    let total = validate_postings(&doc.postings, &doc.status)?;
+    tx.execute(
+        "INSERT INTO voucher_revisions
+         (voucher_id, revision, request_key, source_revision, code, type_name, series, voucher_date,
+          status, cash_ledger_id, amount_paise, reference, narration, actor, action, reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?::DATE, ?, ?, ?::HUGEINT, ?, ?, ?, ?, ?)",
+        params![
+            id,
+            version,
+            key,
+            doc.source_revision,
+            doc.code,
+            doc.type_name,
+            doc.series,
+            doc.date,
+            doc.status,
+            doc.cash_ledger_id,
+            total.to_string(),
+            doc.reference,
+            doc.narration,
+            audit.actor,
+            audit.action,
+            audit.reason
+        ],
+    )?;
+    let mut insert = tx.prepare(
+        "INSERT INTO posting_lines (voucher_id, revision, line_no, ledger_id, side, amount_paise, narration)
+         VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )?;
+    let mut allocate = tx.prepare("INSERT INTO cost_allocations VALUES (?, ?, ?, ?, ?, ?, ?)")?;
+    for (number, posting) in (1i32..).zip(&doc.postings) {
+        insert.execute(params![
+            id,
+            version,
+            number,
+            posting.ledger_id,
+            posting.side.as_str(),
+            posting.amount,
+            posting.narration
+        ])?;
+        for (order, allocation) in (1i32..).zip(&posting.allocations) {
+            allocate.execute(params![
+                id,
+                version,
+                number,
+                order,
+                allocation.category,
+                allocation.centre,
+                allocation.amount
+            ])?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn read_revision(
+    connection: &Connection,
+    id: i64,
+    version: i32,
+) -> duckdb::Result<Revision> {
+    let mut doc = connection.query_row(
+        "SELECT code, type_name, series, voucher_date::VARCHAR, status, cash_ledger_id, reference,
+                narration, source_revision
+         FROM voucher_revisions WHERE voucher_id = ? AND revision = ?",
+        params![id, version],
+        |row| {
+            Ok(Revision {
+                code: row.get(0)?,
+                type_name: row.get(1)?,
+                series: row.get(2)?,
+                date: row.get(3)?,
+                status: row.get(4)?,
+                cash_ledger_id: row.get(5)?,
+                reference: row.get(6)?,
+                narration: row.get(7)?,
+                source_revision: row.get(8)?,
+                postings: vec![],
+            })
+        },
+    )?;
+    let mut stmt = connection.prepare(
+        "SELECT ledger_id, side, amount_paise, narration FROM posting_lines
+         WHERE voucher_id = ? AND revision = ? ORDER BY line_no",
+    )?;
+    doc.postings = stmt
+        .query_map(params![id, version], |row| {
+            Ok(Posting {
+                ledger_id: row.get(0)?,
+                side: PostingSide::from_db(&row.get::<_, String>(1)?),
+                amount: row.get(2)?,
+                narration: row.get(3)?,
+                allocations: vec![],
+            })
+        })?
+        .collect::<duckdb::Result<_>>()?;
+    let mut stmt = connection.prepare(
+        "SELECT line_no, category, centre, amount_paise FROM cost_allocations
+         WHERE voucher_id = ? AND revision = ? ORDER BY line_no, ordinal",
+    )?;
+    let allocations = stmt.query_map(params![id, version], |row| {
+        Ok((
+            row.get::<_, i32>(0)?,
+            Allocation {
+                category: row.get(1)?,
+                centre: row.get(2)?,
+                amount: row.get(3)?,
+            },
+        ))
+    })?;
+    for allocation in allocations {
+        let (number, allocation) = allocation?;
+        doc.postings[number as usize - 1]
+            .allocations
+            .push(allocation);
+    }
+    Ok(doc)
 }
 
 fn read_voucher(connection: &Connection, id: i64) -> Result<Voucher, StoreError> {
     let mut voucher = connection
         .query_row(
-            &format!("SELECT {VOUCHER_COLUMNS} FROM voucher_register WHERE id = ?"),
+            &format!("SELECT {VOUCHER_COLUMNS} FROM book_register WHERE id = ?"),
             [id],
             voucher_row,
         )
         .optional()?
         .ok_or_else(|| StoreError::Missing("Voucher not found.".into()))?;
-    if voucher.kind == "journal" {
-        voucher.postings = read_journal_postings(connection, id)?;
-    }
+    voucher.postings = display_postings(connection, id, voucher.revision)?;
     Ok(voucher)
 }
 
-fn read_journal_postings(connection: &Connection, id: i64) -> duckdb::Result<Vec<VoucherPosting>> {
-    let mut stmt = connection.prepare(
-        "SELECT p.ledger_id, l.name, p.side, p.amount_paise::VARCHAR
-         FROM journal_postings AS p JOIN ledgers AS l ON l.id = p.ledger_id
-         WHERE p.voucher_id = ? ORDER BY p.line_no",
-    )?;
-    stmt.query_map([id], |row| {
-        Ok(VoucherPosting {
-            ledger_id: row.get(0)?,
-            ledger: row.get(1)?,
-            side: row.get(2)?,
-            amount_paise: row.get(3)?,
+fn display_postings(
+    connection: &Connection,
+    id: i64,
+    revision: i32,
+) -> duckdb::Result<Vec<VoucherPosting>> {
+    let doc = read_revision(connection, id, revision)?;
+    let mut names = connection.prepare("SELECT name FROM ledgers WHERE id = ?")?;
+    doc.postings
+        .into_iter()
+        .map(|posting| {
+            Ok(VoucherPosting {
+                ledger_id: posting.ledger_id,
+                ledger: names.query_row([posting.ledger_id], |row| row.get(0))?,
+                side: posting.side.as_str().into(),
+                amount_paise: posting.amount.to_string(),
+                narration: posting.narration,
+                allocations: posting
+                    .allocations
+                    .into_iter()
+                    .map(|a| VoucherAllocation {
+                        category: a.category,
+                        centre: a.centre,
+                        amount_paise: a.amount.to_string(),
+                    })
+                    .collect(),
+            })
         })
-    })?
-    .collect()
+        .collect()
 }
 
 fn voucher_row(row: &Row<'_>) -> duckdb::Result<Voucher> {
@@ -538,11 +971,65 @@ fn voucher_row(row: &Row<'_>) -> duckdb::Result<Voucher> {
         amount_paise: row.get(8)?,
         reference: row.get(9)?,
         narration: row.get(10)?,
-        postings: Vec::new(),
+        type_name: row.get(11)?,
+        series: row.get(12)?,
+        status: row.get(13)?,
+        revision: row.get(14)?,
+        source_guid: row.get(15)?,
+        postings: vec![],
     })
 }
 
-fn ledger_kind(connection: &Connection, id: i64) -> duckdb::Result<Option<String>> {
+fn ledger_row(row: &Row<'_>) -> duckdb::Result<Ledger> {
+    Ok(Ledger {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        kind: row.get(2)?,
+        group: row.get(3)?,
+        group_id: row.get(4)?,
+    })
+}
+
+pub(crate) fn insert_ledger(
+    connection: &Connection,
+    name: &str,
+    kind: &str,
+) -> Result<i64, StoreError> {
+    connection
+        .query_row(
+            "INSERT INTO ledgers (name, name_key, kind) VALUES (?, ?, ?)
+         ON CONFLICT (name_key) DO NOTHING RETURNING id",
+            params![name, name.to_lowercase(), kind],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| StoreError::Conflict("A ledger with that name already exists.".into()))
+}
+
+pub(crate) fn required_text<'a>(
+    text: &'a str,
+    label: &str,
+    max: usize,
+) -> Result<&'a str, StoreError> {
+    let text = validated_text(text, label, max)?;
+    if text.is_empty() {
+        return Err(StoreError::Invalid(format!("Enter {label}.")));
+    }
+    Ok(text)
+}
+
+pub(crate) fn parse_signed_amount(text: &str) -> Result<i64, StoreError> {
+    let text = text.trim();
+    let unsigned = text.strip_prefix(['-', '+']).unwrap_or(text);
+    let value = if matches!(unsigned, "0" | "0.0" | "0.00") {
+        0
+    } else {
+        parse_amount(unsigned)?
+    };
+    Ok(if text.starts_with('-') { -value } else { value })
+}
+
+pub(crate) fn ledger_kind(connection: &Connection, id: i64) -> duckdb::Result<Option<String>> {
     connection
         .query_row("SELECT kind FROM ledgers WHERE id = ?", [id], |row| {
             row.get(0)
@@ -550,7 +1037,11 @@ fn ledger_kind(connection: &Connection, id: i64) -> duckdb::Result<Option<String
         .optional()
 }
 
-fn validated_text<'a>(text: &'a str, label: &str, max: usize) -> Result<&'a str, StoreError> {
+pub(crate) fn validated_text<'a>(
+    text: &'a str,
+    label: &str,
+    max: usize,
+) -> Result<&'a str, StoreError> {
     let text = text.trim();
     if text.chars().count() > max || text.contains('\0') {
         return Err(StoreError::Invalid(format!(
@@ -560,7 +1051,7 @@ fn validated_text<'a>(text: &'a str, label: &str, max: usize) -> Result<&'a str,
     Ok(text)
 }
 
-fn validated_date(date: &str) -> Result<&str, StoreError> {
+pub(crate) fn validated_date(date: &str) -> Result<&str, StoreError> {
     if let Ok(parsed) = NaiveDate::parse_from_str(date, "%Y-%m-%d")
         && (1..=9999).contains(&parsed.year())
         && parsed.format("%Y-%m-%d").to_string() == date
@@ -572,7 +1063,7 @@ fn validated_date(date: &str) -> Result<&str, StoreError> {
     ))
 }
 
-fn parse_amount(amount: &str) -> Result<i64, StoreError> {
+pub(crate) fn parse_amount(amount: &str) -> Result<i64, StoreError> {
     let invalid =
         || StoreError::Invalid("Enter a positive amount with up to two decimal places.".into());
     let (rupees, fraction) = amount
@@ -606,17 +1097,19 @@ mod tests {
     use super::*;
 
     fn fixture() -> (Store, i64, i64) {
-        let store = Store::initialize(Connection::open_in_memory().unwrap()).unwrap();
+        let mut store = Store::initialize(Connection::open_in_memory().unwrap()).unwrap();
         let bank = store
             .add_ledger(NewLedger {
                 name: "Bank of India".into(),
                 kind: LedgerKind::Bank,
+                group_id: None,
             })
             .unwrap();
         let conveyance = store
             .add_ledger(NewLedger {
                 name: "Conveyance".into(),
                 kind: LedgerKind::General,
+                group_id: None,
             })
             .unwrap();
         (store, bank.id, conveyance.id)
@@ -628,11 +1121,11 @@ mod tests {
             date: "2026-11-18".into(),
             reference: "Conveyance".into(),
             narration: "".into(),
-            entry: VoucherEntry::Payment(CashVoucher {
+            entry: VoucherEntry::Payment(CashForm::Single(CashVoucher {
                 cash_ledger_id: bank,
                 other_ledger_id: conveyance,
                 amount: amount.into(),
-            }),
+            })),
         }
     }
 
@@ -734,16 +1227,22 @@ mod tests {
                         ledger_id: conveyance,
                         side: PostingSide::Debit,
                         amount: "10.25".into(),
+                        narration: String::new(),
+                        allocations: vec![],
                     },
                     NewPosting {
                         ledger_id: cash.id,
                         side: PostingSide::Debit,
                         amount: "0.75".into(),
+                        narration: String::new(),
+                        allocations: vec![],
                     },
                     NewPosting {
                         ledger_id: credit_ledger,
                         side: PostingSide::Credit,
                         amount: credit.into(),
+                        narration: String::new(),
+                        allocations: vec![],
                     },
                 ],
             };

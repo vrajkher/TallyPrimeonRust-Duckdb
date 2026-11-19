@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en-IN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenTally Trial Balance</title>
+<style>
+:root { color-scheme: light dark; font: 14px/1.45 system-ui, sans-serif; --line: light-dark(#d7e2db,#35443d); --panel: light-dark(#eef7f0,#21372c); }
+body { margin: 0; padding: 16px; color: CanvasText; background: Canvas; }
+h1 { margin: 0 0 2px; font-size: 19px; }
+p { margin: 4px 0 12px; }
+.summary { display: flex; gap: 16px; flex-wrap: wrap; padding: 10px 12px; background: var(--panel); border-radius: 9px; }
+.summary span { display: block; }
+.scroll { overflow-x: auto; margin-top: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px; border-bottom: 1px solid var(--line); text-align: left; }
+td:not(:first-child), th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.actions { display: flex; gap: 7px; margin-top: 10px; }
+button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: CanvasText; padding: 5px 9px; border-radius: 6px; cursor: pointer; }
+button:disabled { opacity: .55; cursor: default; }
+[hidden] { display: none; }
+</style>
+<h1>OpenTally Trial Balance</h1>
+<p id="period" role="status">Loading report…</p>
+<div id="report" hidden>
+  <div class="summary">
+    <div><span>Debit movement</span><strong id="debit"></strong></div>
+    <div><span>Credit movement</span><strong id="credit"></strong></div>
+    <div><span>Closing debit</span><strong id="closing-debit"></strong></div>
+    <div><span>Closing credit</span><strong id="closing-credit"></strong></div>
+  </div>
+  <p id="opening"></p>
+  <div class="scroll"><table>
+    <thead><tr><th scope="col">Ledger</th><th scope="col">Opening</th><th scope="col">Debit</th><th scope="col">Credit</th><th scope="col">Closing</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+  <div class="actions"><button id="previous" type="button">Previous</button><button id="next" type="button">Next</button></div>
+</div>
+<script type="module">/* OPENTALLY_WIDGET_SCRIPT */</script>
+</html>

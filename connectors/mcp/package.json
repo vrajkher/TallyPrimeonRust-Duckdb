@@ -1,0 +1,35 @@
+{
+  "name": "opentally-mcp",
+  "version": "0.3.0",
+  "description": "OpenTally MCP server for ChatGPT and Claude",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20.3.0"
+  },
+  "bin": {
+    "opentally-mcp": "./src/cli.mjs"
+  },
+  "files": [
+    "src/",
+    "dist/widget.mjs",
+    "dist/widget-notices.txt"
+  ],
+  "scripts": {
+    "start": "node src/cli.mjs",
+    "test": "node --test",
+    "bundle:desktop": "npm run build:widget && node build-desktop.mjs && mcpb validate dist/desktop/manifest.json && mcpb pack dist/desktop dist/OpenTally-Claude-Desktop.mcpb",
+    "build:widget": "node build-widget.mjs",
+    "prepack": "npm run build:widget",
+    "pretest": "npm run build:widget"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@anthropic-ai/mcpb": "2.1.2",
+    "@modelcontextprotocol/ext-apps": "2.0.4",
+    "esbuild": "0.28.2"
+  }
+}

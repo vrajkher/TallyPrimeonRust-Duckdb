@@ -1,0 +1,14 @@
+{
+  "name": "opentally-local",
+  "owner": {
+    "name": "OpenTally contributors"
+  },
+  "plugins": [
+    {
+      "name": "opentally",
+      "source": "./plugins/claude",
+      "description": "Connect Claude Code to an OpenTally book through MCP."
+    }
+  ],
+  "description": "OpenTally accounting tools and period reviews for Claude Code."
+}

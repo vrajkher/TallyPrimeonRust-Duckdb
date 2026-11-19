@@ -1,16 +1,31 @@
 # OpenTally
 
-OpenTally is a local accounting application for one INR company per DuckDB file. Rust serves the browser interface on your computer. It supports compound vouchers, Tally export import, accounting reports, and bank reconciliation.
+OpenTally is a local accounting app built with Rust and DuckDB. It runs in your browser and stores one INR company per DuckDB file. You can use it on its own or connect ChatGPT and Claude to the same books through MCP.
 
-## Run
+## Features
 
-Install Rust 1.90 or newer and a C++ toolchain. Windows builds with the default Rust toolchain require the Visual Studio C++ Build Tools. macOS builds require the Xcode Command Line Tools. The first build compiles the bundled DuckDB library.
+- **Vouchers** for payments, receipts, journals and transfers between cash and bank accounts. Use multiple debit and credit lines, add references and narration, and review or print saved entries from the Day Book.
+- **Account setup and reports** with groups, ledgers, dated opening balances, Trial Balance, ledger statements and cost-centre reports.
+- **Tally import** with a preview of Tally XML or OpenTally JSON, source voucher references, duplicate detection and revision handling.
+- **Bank reconciliation** with CSV statement import, grouped matching and a recorded reason when a match is undone.
+- **Book controls** with voucher revision history and period closing. Editing or cancelling a local voucher records the operator and reason.
+- **ChatGPT and Claude** integration with 25 MCP tools, including reports, import previews, voucher posting and bank reconciliation. Write tools are off by default.
+
+## Install and run
+
+1. Install Git and [Rust 1.90 or newer](https://www.rust-lang.org/tools/install).
+2. Install a C++ build toolchain. On Windows, use Visual Studio Build Tools with **Desktop development with C++**. On macOS, run `xcode-select --install`. On Debian or Ubuntu, install `build-essential`.
+3. Clone the repository and start OpenTally.
 
 ```sh
+git clone https://github.com/vrajkher/TallyPrimeonRust-Duckdb.git
+cd TallyPrimeonRust-Duckdb
 cargo run --locked
 ```
 
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Use **Ctrl+C** in the terminal to stop the app.
+The first build compiles the bundled DuckDB library. When the app is running, open [http://127.0.0.1:3000](http://127.0.0.1:3000). Keep the terminal open while you work. Press **Ctrl+C** to stop the app.
+
+### Choose a book file or port
 
 | Setting | Default |
 | --- | --- |
@@ -19,10 +34,30 @@ Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Use **Ctrl+C** in the termi
 
 The previous `VOUCHER_DB` and `VOUCHER_PORT` settings are accepted. The default path also matches Voucher Desk. When OpenTally first opens an existing file, it migrates vouchers to ordered posting lines while preserving their IDs and numbers. Use OpenTally to post new entries after migrating a book.
 
-## Use the books
+Run this command on macOS or Linux to practice with a separate book.
 
-- Create account groups and ledgers, enter openings with their effective date and source, and set the company name under **Company & import**. Enter an opening debit as a positive amount and an opening credit as a negative amount. Use `0.00` for an explicitly confirmed zero.
-- Use **Payment** (F5), **Receipt** (F6), **Journal** (F7), or **Contra**. Select **Enter multiple posting lines** for a compound payment or receipt. Contra transfers use distinct cash or bank ledgers. Add line narration and cost allocations through each line’s details. Review the debit and credit totals, then save with **Ctrl+Enter**.
+```sh
+OPENTALLY_DB=data/practice.duckdb cargo run --locked
+```
+
+Use these commands in PowerShell.
+
+```powershell
+$env:OPENTALLY_DB = "data/practice.duckdb"
+cargo run --locked
+```
+
+## Record your first voucher
+
+1. Open **Company & import**, enter your company name, and select **Save company**.
+2. Open **Ledgers**, enter `Office Expenses`, select **Party / income / expense**, and click **Create ledger**. A new book already has **Cash** and **Bank** ledgers.
+3. Open **Voucher entry → Payment**. Enter a date and `250.00`, choose **Cash** under **Paid from** and **Office Expenses** under **Paid to / expense**, then select **Save payment**. This debits Office Expenses and credits Cash by ₹250.
+4. Open **Day Book** to find the payment. Select its voucher number to see the details or print it. In **Reports**, choose **Ledger statement** or **Trial Balance** and use a date range that includes the payment.
+
+### Other day-to-day tasks
+
+- Open **Company & import → Account groups and opening balances** to create groups and record openings with an effective date and source. Enter an opening debit as a positive amount and an opening credit as a negative amount. Use `0.00` for an explicitly confirmed zero.
+- Use **Payment** (F5) for money paid, **Receipt** (F6) for money received, **Journal** (F7) for manual debit and credit entries, or **Contra** for a transfer between distinct cash or bank ledgers. Select **Enter multiple posting lines** for a compound payment or receipt. Add line narration and cost allocations through each line’s details. Review the debit and credit totals, then save with **Ctrl+Enter**.
 - Open **Day Book** to search by type, status, dates, voucher number, or ledger. Open the voucher number to print or inspect its history. Edit or cancel an open-period local voucher using an operator name and reason. The operator name is entered by the local user. Edit and cancel preserve the prior revisions. Updates to imported vouchers come through a later source revision.
 - Run **Trial Balance**, **Ledger statement**, or **Cost centres** for a date range. Trial Balance uses the latest confirmed opening on or before the start date, then applies posted movements to that opening. When opening evidence is missing, OpenTally shows the movement and marks the balances unconfirmed.
 - Close a reviewed period from **Company & import** to prevent subsequent postings or revisions through its closing date.
@@ -54,7 +89,47 @@ Use a stable statement transaction ID, an ISO date, a positive amount for deposi
 
 ## ChatGPT and Claude
 
-OpenTally has a common MCP connector for ChatGPT and Claude, a Claude Desktop extension, and a Claude Code plugin. The connector has reader and writer modes and includes an interactive Trial Balance view. [Connector setup](connectors/mcp/README.md) · [ChatGPT plugin setup](plugins/chatgpt/README.md)
+Start the OpenTally accounting app before using the connector. Building the connector or plugins from source requires [Node.js 20.3 or newer](https://nodejs.org/) and npm. Use the same local app port in the connector if you changed `OPENTALLY_PORT`.
+
+| Client | How to connect |
+| --- | --- |
+| Claude Desktop | Build the `.mcpb` bundle below and install it from **Settings → Desktop app → Extensions → Advanced settings → Install Extension**. |
+| Claude Code | Install the local `opentally-mcp` command and launch Claude Code with the plugin folder using the steps below. |
+| ChatGPT | Run the remote OAuth MCP connector and add its public HTTPS `/mcp` endpoint as a custom MCP plugin. [ChatGPT setup](plugins/chatgpt/README.md) |
+| Claude web | Run the same remote OAuth MCP connector and add its endpoint as a custom web connector. [Remote connector setup](connectors/mcp/README.md#chatgpt-and-claude-web) |
+
+### Build the Claude Desktop extension
+
+Run these commands from the repository root in a second terminal.
+
+```sh
+cd connectors/mcp
+npm ci
+npm run bundle:desktop
+```
+
+Install `connectors/mcp/dist/OpenTally-Claude-Desktop.mcpb` in Claude Desktop. Set the port to `3000` if you kept the default. Leave **Allow changes to the book** off for read-only access.
+
+### Install the Claude Code plugin
+
+Run these commands from the repository root. Claude Code must be installed, and `opentally-mcp` must be on its PATH after the npm install.
+
+```sh
+cd connectors/mcp
+npm ci
+npm pack
+npm install -g ./opentally-mcp-0.3.0.tgz
+cd ../..
+claude --plugin-dir ./plugins/claude
+```
+
+The plugin includes the `/opentally:month-end` skill. [Claude Code marketplace setup](connectors/mcp/README.md#claude-code-plugin)
+
+### Use the MCP tools
+
+Try asking your connected assistant to show the Trial Balance for a date range in your book, list payments for the same period, or show a voucher’s revision history. Trial Balance includes an interactive view on clients that support MCP Apps. The connector also provides accounting guides, three review prompts and date suggestions for those prompts.
+
+With write tools enabled, the assistant can post, edit and cancel vouchers, add ledger masters, commit imports, match bank statement lines and close reviewed periods. For a first write, use a practice book and check the saved entry in **Day Book**. For ChatGPT and Claude web, a public HTTPS MCP endpoint and an OAuth provider are required. Grant `opentally.read` for reading and `opentally.write` to operators authorized to change the books. [Connector setup and tool list](connectors/mcp/README.md)
 
 ## Backup and verification
 

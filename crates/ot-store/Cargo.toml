@@ -1,0 +1,20 @@
+[package]
+name = "ot-store"
+description = "OpenTally book storage on DuckDB"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["bundled-duckdb"]
+bundled-duckdb = ["duckdb/bundled"]
+
+[dependencies]
+chrono.workspace = true
+csv.workspace = true
+duckdb.workspace = true
+roxmltree.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true

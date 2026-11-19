@@ -1,0 +1,25 @@
+[package]
+name = "opentally"
+description = "Local accounting and reconciliation backed by DuckDB"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "opentally"
+path = "src/main.rs"
+
+[features]
+default = ["bundled-duckdb"]
+bundled-duckdb = ["ot-store/bundled-duckdb"]
+
+[dependencies]
+axum.workspace = true
+ot-store = { path = "../ot-store", default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["time"] }

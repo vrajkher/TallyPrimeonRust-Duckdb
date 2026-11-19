@@ -324,7 +324,7 @@ Level A runs alongside: A1–A3 with L0 · tools grow with L1–L8 · A4 ships a
 | Level | State |
 |---|---|
 | Plan, licence, roadmap | ✅ Done (PR #4) |
-| Level 0 | ✅ Done except the parts moved to Level 1. Steps 0.1–0.13 are complete: workspace, migrations, single writer, `ot-core`, auth, `/api/v1`, Leptos interface, CI, performance probe (`docs/bench.md`), `opentally` CLI and the native MCP server at `/mcp` with the `opentally mcp` stdio bridge. Moved to the start of Level 1: 0.2b storage traits, the generic `/api/v1/{doctype}` routes and the OpenAPI spec. |
+| Level 0 | ✅ Done except the parts moved to Level 1. Steps 0.1–0.13 are complete: workspace, migrations, single writer, `ot-core`, auth, `/api/v1`, Leptos interface, CI, performance probe (`docs/bench.md`: Trial Balance 38 ms at 100,000 vouchers; posting 39 vouchers/s), `opentally` CLI and the native MCP server at `/mcp` with the `opentally mcp` stdio bridge. Moved to the start of Level 1: 0.2b storage traits, the generic `/api/v1/{doctype}` routes and the OpenAPI spec. |
 | All later levels | Not started |
 
 ## Verification (each level)

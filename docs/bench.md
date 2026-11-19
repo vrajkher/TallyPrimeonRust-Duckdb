@@ -16,12 +16,14 @@ Machine: the 4-core cloud container used for development, release build, DuckDB 
 | 1,000 (RAM disk) | 50/s | 20.2 ms | 10.3 ms | — | — | — | — |
 | 3,000 | 45/s | 22.1 ms | — | — | — | — | — |
 | 10,000 | 40/s | 25.3 ms | 13.2 ms | 19.5 ms | 53.8 ms | 63.0 ms | 7.9 MB |
+| 100,000 | 39/s | 25.6 ms (slowest 366 ms) | 38.2 ms | 52.2 ms | 260.5 ms (page 2000: 314.7 ms) | 363.8 ms | 51.4 MB |
 
-The roadmap's target is a Trial Balance under 2 seconds on 100,000 vouchers. The 100,000-voucher run takes close to an hour at this posting rate; its results will be added here when it finishes. At 10,000 vouchers the Trial Balance takes 13 ms.
+**The roadmap's target is met:** a full-year Trial Balance over 100,000 vouchers takes 38 ms, against a limit of 2 seconds. Posting the 100,000 vouchers one at a time took 43 minutes.
 
 ## What this shows
 
-- **Reports are fast.** DuckDB is built for this: Trial Balance, ledger statements and Day Book pages stay well under a second.
+- **Reports are fast.** DuckDB is built for this: Trial Balance and ledger statements take tens of milliseconds even at 100,000 vouchers.
+- **The Day Book grows with the book.** A page takes 54 ms at 10,000 vouchers and 260 ms at 100,000, roughly in step with size, because the `book_register` view aggregates every voucher before the page is cut. It is still well under a second, but it is the first read to fix.
 - **Posting is the cost.** About 20 ms per voucher, almost all of it fixed overhead per statement: the same run on a RAM disk is as slow, so disk syncs are not the cause. Posting one voucher runs about ten statements (checks, numbering, insert, and reading the saved voucher back through the `book_register` view), and DuckDB spends a millisecond or more planning each one. The cost grows slightly with the size of the book.
 - **This is enough for people, not for bulk loads.** 40–50 vouchers a second is far beyond what a person or a POS counter enters. Bulk loads must not post one voucher per transaction: the Tally import already writes a whole batch in one transaction, and every future importer must do the same.
 
@@ -29,7 +31,7 @@ The roadmap's target is a Trial Balance under 2 seconds on 100,000 vouchers. The
 
 These are recorded for Level 2, where Journal Entry v2 rewrites the posting path anyway:
 
-1. Read the saved voucher back by id from the base tables, not through the `book_register` view, which aggregates every voucher.
+1. Stop going through the `book_register` view, which aggregates every voucher: read a saved voucher back by id from the base tables, and filter and page the Day Book before aggregating.
 2. Reuse prepared statements (`prepare_cached`) on the writer connection.
 3. Add a batch posting API (many vouchers, one transaction) for imports, the CLI and MCP.
 4. Re-run this probe and add the numbers here, so regressions show.

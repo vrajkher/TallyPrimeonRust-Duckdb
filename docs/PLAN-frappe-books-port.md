@@ -2,6 +2,8 @@
 
 Status: **draft for review**. No code changes yet.
 
+Decided by the owner: **MIT, own code** (option A) and **a Rust UI with Leptos**.
+
 Reference: [frappe/frappe-books `version-16`](https://github.com/frappe/frappe-books/tree/version-16) (Frappe Framework v16 app, Python + Vue, AGPL-3.0) and its [server installation guide](https://docs.frappe.io/books/installation).
 
 ## 1. Goal
@@ -82,8 +84,10 @@ TallyPrimeonRust-Duckdb/
 │  ├─ ot-store/               # DuckDB: migrations, repositories, report SQL
 │  ├─ ot-import/              # Tally XML, OpenTally JSON, CSV templates
 │  ├─ ot-print/               # HTML templates (minijinja) → PDF
-│  └─ ot-server/              # axum: REST API, auth, sessions, static web
-├─ web/                       # UI
+│  ├─ ot-api-types/           # serde types shared by server and UI (WASM-safe)
+│  ├─ ot-server/              # axum: REST API, auth, sessions, serves the UI
+│  └─ ot-web/                 # Leptos CSR UI → WASM (Trunk)
+├─ web/                       # current plain-JS UI, retired screen by screen
 ├─ connectors/mcp/            # existing connector, new tools per phase
 └─ deploy/                    # Dockerfile, systemd unit, Caddy/nginx examples
 ```
@@ -97,7 +101,7 @@ Key choices:
 - **Concurrency**: DuckDB allows one writing process per file. One server process owns each company file; reads use cloned connections, writes go through a single writer task (tokio mpsc) instead of a global `Mutex`. Multiple companies = multiple files listed in a small `companies.toml` / registry DB.
 - **API**: JSON REST under `/api/v1/{resource}`, document workflow `draft → submit → cancel/amend`, optimistic concurrency with a `revision` field (Frappe uses `modified`). An OpenAPI spec generated with `utoipa` keeps the UI and MCP tools in step.
 - **Auth**: argon2 password hashes, HTTP-only session cookies, CSRF token, roles (Admin, Accountant, Sales, Purchase, Stock, POS Cashier, Viewer) checked per route and per voucher kind. API tokens for MCP.
-- **UI**: keep the existing plain-JS UI and keyboard flow through phase 4 (smallest change, no build step). Revisit a Rust/WASM UI (Leptos) or a small SPA only when invoice and POS screens need it.
+- **UI: Leptos, client-side rendered (CSR)**, built to WebAssembly with Trunk and served as static files by `ot-server`. It calls the same `/api/v1` REST API as the MCP connector, so there is one API for people and AI. Shared request/response types live in an `ot-api-types` crate that compiles for both the server and `wasm32-unknown-unknown`. We do not use Leptos server-side rendering or server functions: DuckDB cannot build for WASM, and CSR avoids hydration bugs. The existing plain-JS UI keeps working until each Leptos screen replaces it.
 
 ## 6. Phases
 
@@ -108,7 +112,8 @@ Each phase ends with passing `cargo test`, extended acceptance tests (`src/accep
 - Numbered migration runner; migrate existing books in place.
 - Users, roles, login, sessions, API tokens; first-run admin creation.
 - Single-writer DB task; config file + env vars; structured logging (`tracing`).
-- CI: fmt, clippy, tests.
+- Leptos skeleton: login, app shell, keyboard shortcut layer, one screen (Day Book) on the new API.
+- CI: fmt, clippy, tests, WASM build, `cargo deny` licence check.
 
 **Done when** existing books open unchanged, all current tests pass, and the app refuses unauthenticated requests when bound to a non-loopback address.
 
@@ -154,7 +159,42 @@ Each phase ends with passing `cargo test`, extended acceptance tests (`src/accep
 - Backups: `CHECKPOINT` then file copy, or `EXPORT DATABASE` to Parquet on a schedule; restore command.
 - Install guide equivalent to Frappe's, but: download binary → set admin password → run.
 
-## 7. Risks
+## 7. Difficulties to expect
+
+### Staying MIT
+- **No copying.** Do not paste or translate Frappe code, DocType JSON, chart-of-accounts files, print formats or translations. General accounting rules (balanced entries, round-off, FIFO) are ideas and free to use; their expression is not.
+- **Write our own data.** Build the Indian chart from Tally's primary groups and Schedule III, and the GST rules and GSTR-1 JSON from the GSTN public specs.
+- **Check dependencies.** Run `cargo deny` in CI so no GPL or AGPL crate slips in. Leptos, axum and DuckDB are MIT.
+
+### Leptos
+- **Two build targets.** The UI compiles to `wasm32`, so anything it shares with the server must avoid DuckDB, tokio and file I/O. Getting the crate split right in phase 0 prevents a lot of `cfg` noise later.
+- **Toolchain pinning.** Trunk, `wasm-bindgen` and its CLI must be the same version, and CI needs the WASM target installed.
+- **API churn.** Leptos changed its API a lot between 0.6, 0.7 and 0.8. Pin one version and plan upgrades deliberately.
+- **Few ready-made components.** There is no mature data grid, date picker or chart library. The keyboard-driven voucher grid (Tally-style entry) must be built ourselves, and it is the heart of the app.
+- **Keyboard and focus handling.** Global shortcuts (F4–F9, Ctrl+A, Esc) and focus moves through `web_sys` are verbose. Build one shortcut/focus layer early and reuse it.
+- **Bundle size.** A WASM bundle is 1–3 MB. Use release builds, `wasm-opt` and compression; split later if needed.
+- **Testing.** Logic goes in plain Rust and is unit-tested; screens get Playwright end-to-end tests.
+- **Learning curve.** Signals plus Rust ownership in closures takes time to get comfortable with.
+
+### DuckDB as a live accounting database
+- **One writer.** Only one process may open a file for writing, so the server must own it; the MCP connector already goes through HTTP. Concurrent transactions that touch the same rows abort with a conflict, so writes go through one writer task.
+- **Limited constraints and ALTER TABLE.** Foreign keys have no cascades, updates to indexed or referenced columns are restricted, and many schema changes need a table rebuild. The append-only revision model suits this; migrations must be tested on real books.
+- **Small writes.** DuckDB is built for analytics. Many small commits are fine at small-business scale but must be benchmarked early (100k vouchers).
+- **Upgrades and backups.** Moving off the pinned DuckDB version needs a tested export/import path. Back up with `CHECKPOINT` then a file copy, or `EXPORT DATABASE`.
+- **Build time.** The bundled DuckDB C++ build takes minutes; cache it in CI.
+
+### Accounting
+- **Rounding.** Per-line versus per-invoice GST rounding and round-off must match what users and the GST portal expect.
+- **GST edge cases.** Place of supply, reverse charge, exempt and nil-rated supplies, composition dealers and SEZ. E-invoice and e-way bill are out of scope at first.
+- **Backdated stock entries.** A backdated entry changes FIFO costs for every later sale, so the stock ledger and COGS postings must be recalculated. This is the hardest technical piece.
+- **Revisions with payments.** Editing or cancelling an invoice that already has payments allocated, or that sits in a closed period, needs clear rules.
+- **Moving existing books.** Converting today's `ledgers` and `account_groups` into the new account tree without changing any balance.
+
+### Server
+- **Security.** The app has no login today. Login, roles, CSRF protection, secure cookies and TLS through a reverse proxy are needed before anyone exposes it on a network.
+- **Scope.** This is a lot of work for a small team, so ship phases 0–3 first.
+
+## 8. Risks
 
 | Risk | Mitigation |
 | --- | --- |
@@ -164,9 +204,9 @@ Each phase ends with passing `cargo test`, extended acceptance tests (`src/accep
 | Revision model vs. Frappe's reversal entries | Decided: keep revisions; reports already read current revisions. |
 | Scope (Frappe Books is ~16k lines of Python plus a large Vue app) | Ship phases 0–3 as the first usable release; later phases are independent. |
 
-## 8. Open questions for the owner
+## 9. Open questions for the owner
 
-1. Licence: option A (stay MIT, reimplement) or B (relicense AGPL and port directly)?
-2. UI: keep plain JS for now, or start a Leptos (Rust/WASM) UI from phase 1?
+1. ~~Licence~~: MIT, own code.
+2. ~~UI~~: Leptos.
 3. Multi-currency in phase 2 or defer?
 4. Which phase is the first release target — after phase 3 (accounting server) or after phase 5 (with inventory)?

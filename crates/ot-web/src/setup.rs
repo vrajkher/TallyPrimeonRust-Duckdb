@@ -95,7 +95,7 @@ pub fn SetupWizard(on_done: Callback<()>) -> impl IntoView {
                 <div class="field-row">
                     <label class="field">
                         <span>"Country"</span>
-                        <select on:change=on_country prop:value=move || country.get()>
+                        <select aria-label="Country" on:change=on_country prop:value=move || country.get()>
                             {move || {
                                 countries
                                     .get()
@@ -115,7 +115,7 @@ pub fn SetupWizard(on_done: Callback<()>) -> impl IntoView {
                 </div>
                 <label class="field">
                     <span>"Chart of accounts"</span>
-                    <select bind:value=chart>
+                    <select aria-label="Chart of accounts" bind:value=chart>
                         {move || {
                             charts
                                 .get()

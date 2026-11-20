@@ -53,6 +53,11 @@ pub fn countries() -> Vec<String> {
     country_info().keys().cloned().collect()
 }
 
+/// Whether `name` is one of Frappe's countries, spelt as `countries` lists it.
+pub fn is_country(name: &str) -> bool {
+    country_info().contains_key(name)
+}
+
 /// What the wizard fills in for a country, as Frappe Books' `set_country_defaults`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CountryDefaults {

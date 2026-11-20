@@ -72,6 +72,9 @@ pub enum Command {
     /// Number series that name documents, e.g. SINV-1001.
     #[command(subcommand)]
     Series(SeriesCommand),
+    /// Customers and suppliers.
+    #[command(subcommand)]
+    Party(PartyCommand),
     /// Copy the book to a backup file.
     Backup {
         /// Where to write the copy.
@@ -88,6 +91,54 @@ pub enum Command {
         #[arg(long)]
         yes: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PartyCommand {
+    /// List parties, optionally only customers or suppliers, or those matching text.
+    List {
+        /// customer (includes both), supplier (includes both) or both.
+        #[arg(long)]
+        role: Option<String>,
+        /// Text in the name, email, phone or GSTIN.
+        #[arg(long)]
+        search: Option<String>,
+    },
+    /// Add a party. Its default account and currency come from the company settings.
+    Add {
+        name: String,
+        /// customer, supplier or both (default both).
+        #[arg(long, default_value = "both")]
+        role: String,
+        /// A GSTIN makes the party a registered regular GST party.
+        #[arg(long)]
+        gstin: Option<String>,
+        #[arg(long)]
+        email: Option<String>,
+        #[arg(long)]
+        phone: Option<String>,
+    },
+    /// Delete a party by its ID, as `party list --json` shows it.
+    Delete { id: i64 },
+}
+
+fn party_role(text: &str) -> Result<ot_store::parties::PartyRole, CliError> {
+    serde_json::from_value(json!(text)).map_err(|_| {
+        CliError::new(
+            ExitCode::Invalid,
+            format!("Unknown role {text}; use customer, supplier or both."),
+        )
+    })
+}
+
+fn party_text(party: &ot_store::parties::Party) -> String {
+    format!(
+        "{:>5}  {:<32} {:<9} {}",
+        party.id,
+        party.name,
+        party.role.key(),
+        party.gstin.as_deref().unwrap_or("")
+    )
 }
 
 #[derive(Debug, Subcommand)]
@@ -423,6 +474,48 @@ pub fn run(cli: &Cli, command: &Command, input: &mut dyn BufRead) -> Result<Outp
                     applied.ledgers_placed
                 ),
                 &applied,
+            ))
+        }
+        Command::Party(PartyCommand::List { role, search }) => {
+            let filter = ot_store::parties::PartyFilter {
+                role: role.as_deref().map(party_role).transpose()?,
+                q: search.clone(),
+            };
+            let rows = open_existing(&path)?.parties(&filter)?;
+            let text = rows.iter().map(party_text).collect::<Vec<_>>().join("\n");
+            Ok(Output::new(text, &rows))
+        }
+        Command::Party(PartyCommand::Add {
+            name,
+            role,
+            gstin,
+            email,
+            phone,
+        }) => {
+            let input = ot_store::parties::PartyInput {
+                name: name.clone(),
+                role: party_role(role)?,
+                gst_type: if gstin.is_some() {
+                    ot_store::parties::GstType::RegisteredRegular
+                } else {
+                    ot_store::parties::GstType::Unregistered
+                },
+                gstin: gstin.clone(),
+                email: email.clone(),
+                phone: phone.clone(),
+                ..Default::default()
+            };
+            let party = open_existing(&path)?.add_party(input)?;
+            Ok(Output::new(
+                format!("Added {}", party_text(&party).trim_start()),
+                &party,
+            ))
+        }
+        Command::Party(PartyCommand::Delete { id }) => {
+            open_existing(&path)?.delete_party(*id)?;
+            Ok(Output::new(
+                format!("Deleted party {id}."),
+                json!({"deleted": id}),
             ))
         }
         Command::Series(SeriesCommand::List) => {
@@ -1015,6 +1108,46 @@ mod tests {
         assert_eq!(missing.unwrap_err().code, ExitCode::Missing);
         let unknown = exec(&dir, &["series", "add", "X-", "--type", "invoice"], "");
         assert_eq!(unknown.unwrap_err().code, ExitCode::Invalid);
+    }
+
+    #[test]
+    fn parties_are_managed_from_the_command_line() {
+        let dir = temp("parties");
+        exec(&dir, &["migrate"], "").unwrap();
+        let added = exec(
+            &dir,
+            &[
+                "--json",
+                "party",
+                "add",
+                "Asha Stores",
+                "--role",
+                "customer",
+                "--gstin",
+                "24aapfu0939f1zv",
+            ],
+            "",
+        )
+        .unwrap();
+        assert_eq!(added.value["gstin"], "24AAPFU0939F1ZV");
+        let id = added.value["id"].as_i64().unwrap();
+        exec(
+            &dir,
+            &["party", "add", "Kiran Mills", "--role", "supplier"],
+            "",
+        )
+        .unwrap();
+        let customers = exec(&dir, &["--json", "party", "list", "--role", "customer"], "").unwrap();
+        assert_eq!(customers.value.as_array().unwrap().len(), 1);
+        let bad = exec(&dir, &["party", "add", "X", "--gstin", "invalid"], "");
+        assert_eq!(bad.unwrap_err().code, ExitCode::Invalid);
+        let role = exec(&dir, &["party", "add", "Y", "--role", "vendor"], "");
+        assert_eq!(role.unwrap_err().code, ExitCode::Invalid);
+        let duplicate = exec(&dir, &["party", "add", "asha stores"], "");
+        assert_eq!(duplicate.unwrap_err().code, ExitCode::Conflict);
+        exec(&dir, &["party", "delete", &id.to_string()], "").unwrap();
+        let gone = exec(&dir, &["party", "delete", &id.to_string()], "");
+        assert_eq!(gone.unwrap_err().code, ExitCode::Missing);
     }
 
     #[test]

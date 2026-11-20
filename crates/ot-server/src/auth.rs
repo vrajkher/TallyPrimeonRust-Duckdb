@@ -268,6 +268,7 @@ const PAYMENT: &str = "Books Payment";
 const LEDGER: &str = "Books Ledger Entry";
 const SETTINGS: &str = "Books Accounting Settings";
 const SERIES: &str = "Books Number Series";
+const PARTY: &str = "Books Party";
 
 fn rule(method: &Method, path: &str) -> Option<Rule> {
     let path = path.strip_prefix("/api/v1").map_or(path, |rest| rest);
@@ -310,7 +311,15 @@ fn rule(method: &Method, path: &str) -> Option<Rule> {
             Rule::Any(&[(SERIES, Perm::Delete)])
         }
         (false, "/series/{prefix}") => Rule::Any(&[(SERIES, Perm::Write)]),
-        (true, "/company/countries" | "/company/defaults") => Rule::Signed,
+        (true, "/parties" | "/parties/{id}") => Rule::Any(&[(PARTY, Perm::Read)]),
+        (false, "/parties") => Rule::Any(&[(PARTY, Perm::Create)]),
+        (false, "/parties/{id}") if *method == Method::DELETE => {
+            Rule::Any(&[(PARTY, Perm::Delete)])
+        }
+        (false, "/parties/{id}") => Rule::Any(&[(PARTY, Perm::Write)]),
+        (true, "/company/countries" | "/company/defaults" | "/regional/indian-states") => {
+            Rule::Signed
+        }
         (false, "/company/setup") => Rule::Admin,
         _ => return None,
     })

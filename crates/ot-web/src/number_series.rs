@@ -115,7 +115,7 @@ pub fn SeriesView(on_signed_out: Callback<()>) -> impl IntoView {
             </label>
             <label class="field">
                 <span>"Document type"</span>
-                <select bind:value=kind>
+                <select aria-label="Document type" bind:value=kind>
                     {move || {
                         types
                             .get()

@@ -55,6 +55,13 @@ pub const MIGRATIONS: &[Migration] = &[
             "../migrations/duckdb/0005_number_series/1_series.sql"
         )],
     },
+    Migration {
+        version: 6,
+        name: "parties",
+        parts: &[include_str!(
+            "../migrations/duckdb/0006_parties/1_parties.sql"
+        )],
+    },
 ];
 
 /// Migrations from this version on must use SQL that PostgreSQL also accepts, so a
@@ -305,7 +312,7 @@ mod tests {
     fn fresh_book_applies_all_then_nothing() {
         let mut connection = Connection::open_in_memory().unwrap();
         let all: Vec<i32> = MIGRATIONS.iter().map(|m| m.version).collect();
-        assert_eq!(all, (1..=5).collect::<Vec<_>>(), "versions count up from 1");
+        assert_eq!(all, (1..=6).collect::<Vec<_>>(), "versions count up from 1");
         assert_eq!(migrate(&mut connection).unwrap(), all);
         assert!(migrate(&mut connection).unwrap().is_empty());
         let (name, checksum): (String, String) = connection

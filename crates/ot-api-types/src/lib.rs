@@ -142,6 +142,72 @@ pub struct NewNumberSeries {
     pub make_default: bool,
 }
 
+/// A party's address. `display` and `place_of_supply` are filled in by the server.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Address {
+    pub address_line1: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address_line2: Option<String>,
+    pub city: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    pub country: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postal_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub display: String,
+    #[serde(default, skip_serializing)]
+    pub place_of_supply: Option<String>,
+}
+
+/// A customer or supplier from `GET /api/v1/parties`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Party {
+    pub id: i64,
+    pub name: String,
+    /// `customer`, `supplier` or `both`.
+    pub role: String,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub address: Option<Address>,
+    pub default_ledger_id: Option<i64>,
+    pub default_ledger_name: Option<String>,
+    pub currency: String,
+    pub tax_id: Option<String>,
+    /// `unregistered`, `registered_regular` or `consumer`.
+    pub gst_type: String,
+    pub gstin: Option<String>,
+    pub revision: i32,
+}
+
+/// `POST /api/v1/parties`, and `POST /api/v1/parties/{id}` with `revision` set.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartyInput {
+    pub name: String,
+    pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<Address>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_ledger_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tax_id: Option<String>,
+    pub gst_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gstin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<i32>,
+}
+
 /// `POST /api/v1/session`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignIn {

@@ -8,6 +8,7 @@ pub mod bank;
 pub mod chart;
 pub mod imports;
 pub mod migrate;
+pub mod parties;
 pub mod reports;
 pub mod series;
 mod store;

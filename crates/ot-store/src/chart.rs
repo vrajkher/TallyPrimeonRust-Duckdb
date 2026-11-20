@@ -266,7 +266,7 @@ fn kind_type(kind: &str) -> Option<AccountType> {
     }
 }
 
-fn chart_of(connection: &duckdb::Connection) -> Result<ChartOfAccounts, StoreError> {
+pub(crate) fn chart_of(connection: &duckdb::Connection) -> Result<ChartOfAccounts, StoreError> {
     let groups = resolve_groups(read_groups(connection)?);
     let by_id: HashMap<i64, &GroupAccount> = groups.iter().map(|g| (g.id, g)).collect();
     let mut stmt = connection.prepare(
@@ -314,7 +314,9 @@ fn chart_of(connection: &duckdb::Connection) -> Result<ChartOfAccounts, StoreErr
     })
 }
 
-fn settings_of(connection: &duckdb::Connection) -> Result<AccountingSettings, StoreError> {
+pub(crate) fn settings_of(
+    connection: &duckdb::Connection,
+) -> Result<AccountingSettings, StoreError> {
     Ok(connection.query_row(
         "SELECT country, currency, CAST(fiscal_year_start AS VARCHAR), chart, gstin,
                 round_off_ledger_id, write_off_ledger_id, discount_ledger_id,
@@ -427,15 +429,10 @@ impl Store {
         let gstin = request
             .gstin
             .as_deref()
-            .map(|g| g.trim().to_uppercase())
-            .filter(|g| !g.is_empty());
-        if let Some(g) = &gstin
-            && (g.len() != 15 || !g.chars().all(|c| c.is_ascii_alphanumeric()))
-        {
-            return Err(StoreError::Invalid(
-                "A GSTIN has 15 letters and digits.".into(),
-            ));
-        }
+            .filter(|g| !g.trim().is_empty())
+            .map(ot_core::regional::validate_gstin)
+            .transpose()
+            .map_err(invalid)?;
 
         let tx = self.connection.transaction()?;
         tx.execute(
@@ -445,6 +442,21 @@ impl Store {
         let applied = apply_chart_in(&tx, &chart)?;
         let bank_ledger_id = ensure_ledger(&tx, &bank_name, AccountType::Bank)?;
         ensure_ledger(&tx, "Discounts", AccountType::IncomeAccount)?;
+        // Parties default to a receivable or payable ledger. Tally's reserved groups
+        // have none, so add Frappe's Debtors and Creditors to Sundry Debtors and
+        // Sundry Creditors.
+        for (kind, name) in [
+            (AccountType::Receivable, "Debtors"),
+            (AccountType::Payable, "Creditors"),
+        ] {
+            let has_kind = chart_of(&tx)?
+                .ledgers
+                .iter()
+                .any(|l| l.effective_type == Some(kind));
+            if !has_kind {
+                ensure_ledger(&tx, name, kind)?;
+            }
+        }
         tx.execute(
             "UPDATE accounting_settings SET country = ?, currency = ?, fiscal_year_start = ?,
                     fiscal_year_end = ?, gstin = ?, bank_ledger_id = ?, chart = ?, setup_complete = TRUE
@@ -628,15 +640,11 @@ impl Store {
             })?;
         }
         let gstin = match update.gstin {
-            Some(Some(text)) => {
-                let text = text.trim().to_uppercase();
-                if text.len() != 15 || !text.chars().all(|c| c.is_ascii_alphanumeric()) {
-                    return Err(StoreError::Invalid(
-                        "A GSTIN has 15 letters and digits.".into(),
-                    ));
-                }
-                Some(Some(text))
-            }
+            Some(Some(text)) if text.trim().is_empty() => Some(None),
+            Some(Some(text)) => Some(Some(
+                ot_core::regional::validate_gstin(&text)
+                    .map_err(|e| StoreError::Invalid(e.to_string()))?,
+            )),
             other => other,
         };
         let country = update

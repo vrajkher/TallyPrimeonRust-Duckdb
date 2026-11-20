@@ -981,3 +981,149 @@ async fn number_series_follow_frappe_roles() {
         StatusCode::FORBIDDEN
     );
 }
+
+#[tokio::test]
+async fn parties_follow_frappe_roles_and_revisions() {
+    let app = App::new();
+    let asha = set_up_admin(&app).await;
+    let setup = app
+        .post(
+            "/api/v1/company/setup",
+            &asha.write(),
+            json!({"company_name": "Shree Traders", "country": "India", "bank_name": "HDFC Bank"}),
+        )
+        .await;
+    assert_eq!(setup.status, StatusCode::OK, "{}", setup.body);
+
+    let created = app
+        .post(
+            "/api/v1/parties",
+            &asha.write(),
+            json!({
+                "name": "Asha Stores", "role": "customer", "gst_type": "registered_regular",
+                "gstin": "24aapfu0939f1zv",
+                "address": {"address_line1": "12 Ring Road", "city": "Surat",
+                            "state": "Gujarat", "country": "India", "postal_code": "395002"}
+            }),
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let party: ot_api_types::Party = serde_json::from_value(created.body).unwrap();
+    assert_eq!(party.gstin.as_deref(), Some("24AAPFU0939F1ZV"));
+    assert_eq!(party.default_ledger_name.as_deref(), Some("Debtors"));
+    let address = party.address.clone().unwrap();
+    assert_eq!(address.place_of_supply.as_deref(), Some("Gujarat"));
+    assert_eq!(
+        address.display,
+        "12 Ring Road, Surat, Gujarat, India, 395002"
+    );
+
+    // The shared input type round-trips through the API.
+    let mut change = ot_api_types::PartyInput {
+        name: party.name.clone(),
+        role: "both".into(),
+        address: party.address.clone(),
+        gst_type: "consumer".into(),
+        gstin: party.gstin.clone(),
+        revision: Some(party.revision),
+        ..Default::default()
+    };
+    let path = format!("/api/v1/parties/{}", party.id);
+    let changed = app
+        .post(&path, &asha.write(), serde_json::to_value(&change).unwrap())
+        .await;
+    assert_eq!(changed.status, StatusCode::OK, "{}", changed.body);
+    assert_eq!(
+        changed.body["gstin"],
+        Value::Null,
+        "a consumer has no GSTIN"
+    );
+    assert_eq!(changed.body["revision"], 2);
+    let stale = app
+        .post(&path, &asha.write(), serde_json::to_value(&change).unwrap())
+        .await;
+    assert_eq!(stale.status, StatusCode::CONFLICT);
+    change.revision = Some(2);
+    change.name = String::new();
+    let empty = app
+        .post(&path, &asha.write(), serde_json::to_value(&change).unwrap())
+        .await;
+    assert_eq!(empty.status, StatusCode::BAD_REQUEST);
+
+    let states = app
+        .get("/api/v1/regional/indian-states", &asha.read())
+        .await;
+    assert!(
+        states
+            .body
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s == "Gujarat")
+    );
+
+    for (username, role) in [("chetan", "books_cashier"), ("veena", "viewer")] {
+        app.post(
+            "/api/v1/users",
+            &asha.write(),
+            json!({"username": username, "full_name": username, "password": "another long secret", "roles": [role]}),
+        )
+        .await;
+    }
+    let sign_in = |username: &'static str| {
+        let app = &app;
+        async move {
+            Browser::from(
+                &app.post(
+                    "/api/v1/session",
+                    &[],
+                    json!({"username": username, "password": "another long secret"}),
+                )
+                .await,
+            )
+        }
+    };
+    let chetan = sign_in("chetan").await;
+    let veena = sign_in("veena").await;
+    // Cashiers add customers at the counter but do not delete them.
+    let walk_in = app
+        .post(
+            "/api/v1/parties",
+            &chetan.write(),
+            json!({"name": "Walk-in", "role": "customer"}),
+        )
+        .await;
+    assert_eq!(walk_in.status, StatusCode::CREATED, "{}", walk_in.body);
+    assert_eq!(
+        app.delete(&path, &chetan.write()).await.status,
+        StatusCode::FORBIDDEN
+    );
+    // Viewers only read.
+    assert_eq!(
+        app.get("/api/v1/parties?role=customer", &veena.read())
+            .await
+            .body
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        app.post(
+            "/api/v1/parties",
+            &veena.write(),
+            json!({"name": "X", "role": "customer"})
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.delete(&path, &asha.write()).await.status,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        app.get(&path, &asha.read()).await.status,
+        StatusCode::NOT_FOUND
+    );
+}

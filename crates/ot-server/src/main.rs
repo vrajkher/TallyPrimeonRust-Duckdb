@@ -454,6 +454,64 @@ async fn delete_number_series(
         .map_err(ApiError)
 }
 
+async fn parties(
+    State(db): State<Database>,
+    Query(filter): Query<ot_store::parties::PartyFilter>,
+) -> ApiResult<Json<Vec<ot_store::parties::Party>>> {
+    db.read(move |store| store.parties(&filter))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn party(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<ot_store::parties::Party>> {
+    db.read(move |store| store.party(id))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn add_party(
+    State(db): State<Database>,
+    Json(input): Json<ot_store::parties::PartyInput>,
+) -> ApiResult<(StatusCode, Json<ot_store::parties::Party>)> {
+    db.write(move |store| store.add_party(input))
+        .await
+        .map(|party| (StatusCode::CREATED, Json(party)))
+        .map_err(ApiError)
+}
+
+async fn update_party(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+    Json(input): Json<ot_store::parties::PartyInput>,
+) -> ApiResult<Json<ot_store::parties::Party>> {
+    db.write(move |store| store.update_party(id, input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn delete_party(State(db): State<Database>, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    db.write(move |store| store.delete_party(id))
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(ApiError)
+}
+
+/// Indian states and union territories, for address forms.
+async fn indian_states() -> Json<Vec<&'static str>> {
+    Json(
+        ot_core::regional::INDIAN_STATES
+            .iter()
+            .map(|(_, name)| *name)
+            .collect(),
+    )
+}
+
 async fn company_countries() -> Json<Vec<String>> {
     Json(ot_core::setup::countries())
 }
@@ -521,6 +579,12 @@ fn book_routes() -> Router<AppState> {
             "/series/{prefix}",
             post(update_number_series).delete(delete_number_series),
         )
+        .route("/parties", get(parties).post(add_party))
+        .route(
+            "/parties/{id}",
+            get(party).post(update_party).delete(delete_party),
+        )
+        .route("/regional/indian-states", get(indian_states))
         .route("/company/countries", get(company_countries))
         .route("/company/defaults", get(company_defaults))
         .route("/company/setup", post(company_setup))

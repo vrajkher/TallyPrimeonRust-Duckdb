@@ -9,6 +9,7 @@ pub mod doc;
 pub mod ledger;
 pub mod money;
 mod permissions_table;
+pub mod regional;
 pub mod series;
 pub mod setup;
 

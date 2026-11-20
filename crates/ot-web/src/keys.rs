@@ -21,6 +21,8 @@ pub enum Action {
     Accounts,
     /// Alt+N: number series.
     Series,
+    /// Alt+P: parties.
+    Parties,
     /// `/`: focus the list search.
     Search,
     /// Ctrl+A: accept (save) the open form, as in Tally.
@@ -63,6 +65,7 @@ pub fn action(key: &str, mods: Modifiers, typing: bool) -> Option<Action> {
         "d" | "D" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::DayBook),
         "a" | "A" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Accounts),
         "n" | "N" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Series),
+        "p" | "P" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Parties),
         "c" | "C" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Create),
         _ => None,
     }
@@ -115,6 +118,7 @@ mod tests {
         assert_eq!(action("d", alt, false), Some(Action::DayBook));
         assert_eq!(action("a", alt, true), Some(Action::Accounts));
         assert_eq!(action("N", alt, false), Some(Action::Series));
+        assert_eq!(action("p", alt, true), Some(Action::Parties));
         assert_eq!(action("C", alt, true), Some(Action::Create));
         assert_eq!(action("Escape", NONE, true), Some(Action::Back));
         assert_eq!(action("a", NONE, false), None);

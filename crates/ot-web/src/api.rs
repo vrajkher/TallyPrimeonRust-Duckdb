@@ -3,7 +3,8 @@
 use gloo_net::http::{Request, Response};
 use ot_api_types::{
     ApiErrorBody, ChartOfAccounts, ChartTemplate, CompanySetup, CountryDefaults, DayBook,
-    DayBookFilter, NewNumberSeries, NumberSeries, SeriesType, SessionState, Setup, SignIn,
+    DayBookFilter, NewNumberSeries, NumberSeries, Party, PartyInput, SeriesType, SessionState,
+    Setup, SignIn,
 };
 use serde::de::DeserializeOwned;
 
@@ -160,7 +161,12 @@ pub async fn make_default_series(prefix: &str) -> Result<NumberSeries, ApiError>
 }
 
 pub async fn delete_number_series(prefix: &str) -> Result<(), ApiError> {
-    let response = Request::delete(&format!("/api/v1/series/{}", encode(prefix)))
+    delete(&format!("/api/v1/series/{}", encode(prefix))).await
+}
+
+/// A DELETE sent with the session's CSRF token; the reply has no body.
+async fn delete(url: &str) -> Result<(), ApiError> {
+    let response = Request::delete(url)
         .header("x-csrf-token", &csrf_token())
         .send()
         .await
@@ -169,6 +175,32 @@ pub async fn delete_number_series(prefix: &str) -> Result<(), ApiError> {
         return Ok(());
     }
     read::<serde_json::Value>(response).await.map(|_| ())
+}
+
+pub async fn parties(role: &str, q: &str) -> Result<Vec<Party>, ApiError> {
+    let mut query = Vec::new();
+    if !role.is_empty() {
+        query.push(format!("role={}", encode(role)));
+    }
+    if !q.trim().is_empty() {
+        query.push(format!("q={}", encode(q.trim())));
+    }
+    get(&format!("/api/v1/parties?{}", query.join("&"))).await
+}
+
+pub async fn save_party(id: Option<i64>, input: &PartyInput) -> Result<Party, ApiError> {
+    match id {
+        Some(id) => post(&format!("/api/v1/parties/{id}"), input).await,
+        None => post("/api/v1/parties", input).await,
+    }
+}
+
+pub async fn delete_party(id: i64) -> Result<(), ApiError> {
+    delete(&format!("/api/v1/parties/{id}")).await
+}
+
+pub async fn indian_states() -> Result<Vec<String>, ApiError> {
+    get("/api/v1/regional/indian-states").await
 }
 
 pub async fn countries() -> Result<Vec<String>, ApiError> {

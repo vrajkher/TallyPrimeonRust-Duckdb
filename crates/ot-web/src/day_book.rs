@@ -137,7 +137,7 @@ pub fn DayBookView(on_signed_out: Callback<()>) -> impl IntoView {
             <label class="field"><span>"To"</span><input type="date" bind:value=to/></label>
             <label class="field">
                 <span>"Type"</span>
-                <select bind:value=kind>
+                <select aria-label="Type" bind:value=kind>
                     <option value="">"All types"</option>
                     <option value="payment">"Payment"</option>
                     <option value="receipt">"Receipt"</option>

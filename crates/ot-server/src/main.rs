@@ -617,6 +617,59 @@ async fn delete_item(State(db): State<Database>, Path(id): Path<i64>) -> ApiResu
         .map_err(ApiError)
 }
 
+async fn taxes(State(db): State<Database>) -> ApiResult<Json<Vec<ot_store::taxes::Tax>>> {
+    db.read(|store| store.taxes())
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn tax(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<ot_store::taxes::Tax>> {
+    db.read(move |store| store.tax(id))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn add_tax(
+    State(db): State<Database>,
+    Json(input): Json<ot_store::taxes::TaxInput>,
+) -> ApiResult<(StatusCode, Json<ot_store::taxes::Tax>)> {
+    db.write(move |store| store.add_tax(input))
+        .await
+        .map(|tax| (StatusCode::CREATED, Json(tax)))
+        .map_err(ApiError)
+}
+
+async fn update_tax(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+    Json(input): Json<ot_store::taxes::TaxInput>,
+) -> ApiResult<Json<ot_store::taxes::Tax>> {
+    db.write(move |store| store.update_tax(id, input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn delete_tax(State(db): State<Database>, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    db.write(move |store| store.delete_tax(id))
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(ApiError)
+}
+
+/// Adds India's GST ledgers and taxes; existing ones are kept.
+async fn add_gst_taxes(State(db): State<Database>) -> ApiResult<Json<Vec<ot_store::taxes::Tax>>> {
+    db.write(|store| store.add_gst_taxes())
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
 /// Indian states and union territories, for address forms.
 async fn indian_states() -> Json<Vec<&'static str>> {
     Json(
@@ -707,6 +760,9 @@ fn book_routes() -> Router<AppState> {
             "/item-groups/{id}",
             post(update_item_group).delete(delete_item_group),
         )
+        .route("/taxes", get(taxes).post(add_tax))
+        .route("/taxes/gst", post(add_gst_taxes))
+        .route("/taxes/{id}", get(tax).post(update_tax).delete(delete_tax))
         .route("/items", get(items).post(add_item))
         .route(
             "/items/{id}",

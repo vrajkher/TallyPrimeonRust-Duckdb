@@ -1258,3 +1258,114 @@ async fn items_groups_and_units_follow_frappe_roles() {
         StatusCode::NO_CONTENT
     );
 }
+
+#[tokio::test]
+async fn taxes_follow_frappe_roles_and_gst_is_seeded_for_india() {
+    let app = App::new();
+    let asha = set_up_admin(&app).await;
+    app.post(
+        "/api/v1/company/setup",
+        &asha.write(),
+        json!({"company_name": "Shree Traders", "country": "India", "bank_name": "HDFC Bank"}),
+    )
+    .await;
+    let taxes: Vec<ot_api_types::Tax> =
+        serde_json::from_value(app.get("/api/v1/taxes", &asha.read()).await.body).unwrap();
+    assert_eq!(taxes.len(), 18);
+    let gst18 = taxes.iter().find(|t| t.name == "GST-18").unwrap();
+    assert_eq!(gst18.total_rate, "18");
+    assert_eq!(gst18.details[0].ledger_name, "CGST");
+
+    // A custom tax from the shared input type: cess on top of GST.
+    let input = ot_api_types::TaxInput {
+        name: "GST-28 + Cess 12".into(),
+        details: gst18
+            .details
+            .iter()
+            .map(|d| ot_api_types::TaxDetail {
+                ledger_id: d.ledger_id,
+                rate: "14".into(),
+                ..Default::default()
+            })
+            .chain(std::iter::once(ot_api_types::TaxDetail {
+                ledger_id: gst18.details[0].ledger_id,
+                rate: "12".into(),
+                ..Default::default()
+            }))
+            .collect(),
+        revision: None,
+    };
+    let created = app
+        .post(
+            "/api/v1/taxes",
+            &asha.write(),
+            serde_json::to_value(&input).unwrap(),
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    assert_eq!(created.body["total_rate"], "40");
+    let bad = app
+        .post(
+            "/api/v1/taxes",
+            &asha.write(),
+            json!({"name": "Bad", "details": [{"ledger_id": gst18.details[0].ledger_id, "rate": "150"}]}),
+        )
+        .await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+
+    // An item names a tax; a tax in use stays.
+    let item = app
+        .post(
+            "/api/v1/items",
+            &asha.write(),
+            json!({"name": "Basmati Rice", "tax_id": gst18.id}),
+        )
+        .await;
+    assert_eq!(item.status, StatusCode::CREATED, "{}", item.body);
+    let item: ot_api_types::Item = serde_json::from_value(item.body).unwrap();
+    assert_eq!(item.tax_name.as_deref(), Some("GST-18"));
+    let path = format!("/api/v1/taxes/{}", gst18.id);
+    assert_eq!(
+        app.delete(&path, &asha.write()).await.status,
+        StatusCode::BAD_REQUEST
+    );
+    // Adding GST again keeps what is there.
+    let again = app
+        .post("/api/v1/taxes/gst", &asha.write(), json!({}))
+        .await;
+    assert_eq!(again.status, StatusCode::OK, "{}", again.body);
+    assert_eq!(again.body.as_array().unwrap().len(), 19);
+
+    app.post(
+        "/api/v1/users",
+        &asha.write(),
+        json!({"username": "ravi", "full_name": "Ravi", "password": "another long secret", "roles": ["books_user"]}),
+    )
+    .await;
+    let ravi = Browser::from(
+        &app.post(
+            "/api/v1/session",
+            &[],
+            json!({"username": "ravi", "password": "another long secret"}),
+        )
+        .await,
+    );
+    // Books Users read taxes and pick them for items, but do not change them.
+    assert_eq!(app.get(&path, &ravi.read()).await.status, StatusCode::OK);
+    assert_eq!(
+        app.post(
+            "/api/v1/taxes",
+            &ravi.write(),
+            serde_json::to_value(&input).unwrap()
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.post("/api/v1/taxes/gst", &ravi.write(), json!({}))
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+}

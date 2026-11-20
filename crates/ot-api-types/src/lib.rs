@@ -225,6 +225,10 @@ pub struct ItemGroup {
     pub name: String,
     pub hsn_code: Option<String>,
     #[serde(default)]
+    pub tax_id: Option<i64>,
+    #[serde(default)]
+    pub tax_name: Option<String>,
+    #[serde(default)]
     pub items: i64,
 }
 
@@ -258,6 +262,10 @@ pub struct Item {
     pub hsn_code: Option<String>,
     pub barcode: Option<String>,
     pub track_item: bool,
+    #[serde(default)]
+    pub tax_id: Option<i64>,
+    #[serde(default)]
+    pub tax_name: Option<String>,
     pub conversions: Vec<Conversion>,
     pub revision: i32,
 }
@@ -288,7 +296,44 @@ pub struct ItemInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub barcode: Option<String>,
     pub track_item: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tax_id: Option<i64>,
     pub conversions: Vec<Conversion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<i32>,
+}
+
+/// One row of a tax: `rate` percent posted to a ledger.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaxDetail {
+    pub ledger_id: i64,
+    #[serde(default, skip_serializing)]
+    pub ledger_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payment_ledger_id: Option<i64>,
+    #[serde(default, skip_serializing)]
+    pub payment_ledger_name: Option<String>,
+    /// Percent, e.g. `"9"`.
+    pub rate: String,
+}
+
+/// A tax template from `GET /api/v1/taxes`, e.g. GST-18 (CGST 9 + SGST 9).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tax {
+    pub id: i64,
+    pub name: String,
+    pub details: Vec<TaxDetail>,
+    pub total_rate: String,
+    #[serde(default)]
+    pub used_by: i64,
+    pub revision: i32,
+}
+
+/// `POST /api/v1/taxes`, and `POST /api/v1/taxes/{id}` with `revision` set.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaxInput {
+    pub name: String,
+    pub details: Vec<TaxDetail>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revision: Option<i32>,
 }

@@ -86,14 +86,19 @@ pub struct ItemGroup {
     pub id: i64,
     pub name: String,
     pub hsn_code: Option<String>,
+    /// The tax its items' invoices use when an item names none (Level 2).
+    pub tax_id: Option<i64>,
+    pub tax_name: Option<String>,
     pub items: i64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ItemGroupInput {
     pub name: String,
     #[serde(default)]
     pub hsn_code: Option<String>,
+    #[serde(default)]
+    pub tax_id: Option<i64>,
 }
 
 // ------------------------------------------------------------------ items
@@ -136,6 +141,8 @@ pub struct ItemInput {
     #[serde(default)]
     pub track_item: bool,
     #[serde(default)]
+    pub tax_id: Option<i64>,
+    #[serde(default)]
     pub conversions: Vec<Conversion>,
     #[serde(default)]
     pub revision: Option<i32>,
@@ -161,6 +168,8 @@ pub struct Item {
     pub hsn_code: Option<String>,
     pub barcode: Option<String>,
     pub track_item: bool,
+    pub tax_id: Option<i64>,
+    pub tax_name: Option<String>,
     pub conversions: Vec<Conversion>,
     pub revision: i32,
 }
@@ -234,6 +243,7 @@ struct Clean {
     hsn_code: Option<String>,
     barcode: Option<String>,
     track_item: bool,
+    tax_id: Option<i64>,
     conversions: Vec<Conversion>,
 }
 
@@ -364,6 +374,7 @@ fn clean(conn: &Connection, input: &ItemInput) -> Result<Clean, StoreError> {
         hsn_code,
         barcode,
         track_item: input.track_item,
+        tax_id: crate::taxes::check_tax(conn, input.tax_id)?,
         conversions,
     })
 }
@@ -384,8 +395,9 @@ fn name_taken(
 const ITEM_SELECT: &str = "
     SELECT i.id, i.name, i.item_code, i.group_id, g.name, i.item_usage, i.item_type, i.unit,
            i.rate_minor, i.description, i.income_ledger_id, il.name, i.expense_ledger_id,
-           el.name, i.hsn_code, i.barcode, i.track_item, i.revision
+           el.name, i.hsn_code, i.barcode, i.track_item, i.revision, i.tax_id, t.name
     FROM items i
+    LEFT JOIN taxes t ON t.id = i.tax_id
     LEFT JOIN item_groups g ON g.id = i.group_id
     LEFT JOIN ledgers il ON il.id = i.income_ledger_id
     LEFT JOIN ledgers el ON el.id = i.expense_ledger_id";
@@ -418,6 +430,8 @@ fn read_items(
                 barcode: row.get(15)?,
                 track_item: row.get(16)?,
                 revision: row.get(17)?,
+                tax_id: row.get(18)?,
+                tax_name: row.get(19)?,
                 conversions: Vec::new(),
             })
         })?
@@ -530,8 +544,9 @@ impl Store {
 
     pub fn item_groups(&self) -> Result<Vec<ItemGroup>, StoreError> {
         let mut statement = self.connection.prepare(
-            "SELECT g.id, g.name, g.hsn_code, (SELECT COUNT(*) FROM items i WHERE i.group_id = g.id)
-             FROM item_groups g ORDER BY g.name_key",
+            "SELECT g.id, g.name, g.hsn_code, (SELECT COUNT(*) FROM items i WHERE i.group_id = g.id),
+                    g.tax_id, t.name
+             FROM item_groups g LEFT JOIN taxes t ON t.id = g.tax_id ORDER BY g.name_key",
         )?;
         let rows = statement
             .query_map([], |row| {
@@ -540,6 +555,8 @@ impl Store {
                     name: row.get(1)?,
                     hsn_code: row.get(2)?,
                     items: row.get(3)?,
+                    tax_id: row.get(4)?,
+                    tax_name: row.get(5)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -556,14 +573,15 @@ impl Store {
     pub fn add_item_group(&mut self, input: ItemGroupInput) -> Result<ItemGroup, StoreError> {
         let name = required_text(&input.name, "the item group name", 140)?.to_owned();
         let hsn = check_hsn(&self.connection, input.hsn_code.as_deref())?;
+        let tax = crate::taxes::check_tax(&self.connection, input.tax_id)?;
         if name_taken(&self.connection, "item_groups", &name, None)? {
             return Err(StoreError::Conflict(format!(
                 "An item group named {name} already exists."
             )));
         }
         let id: i64 = self.connection.query_row(
-            "INSERT INTO item_groups (name, name_key, hsn_code) VALUES (?, ?, ?) RETURNING id",
-            params![name, name.to_lowercase(), hsn],
+            "INSERT INTO item_groups (name, name_key, hsn_code, tax_id) VALUES (?, ?, ?, ?) RETURNING id",
+            params![name, name.to_lowercase(), hsn, tax],
             |row| row.get(0),
         )?;
         self.item_group(id)
@@ -577,14 +595,15 @@ impl Store {
         self.item_group(id)?;
         let name = required_text(&input.name, "the item group name", 140)?.to_owned();
         let hsn = check_hsn(&self.connection, input.hsn_code.as_deref())?;
+        let tax = crate::taxes::check_tax(&self.connection, input.tax_id)?;
         if name_taken(&self.connection, "item_groups", &name, Some(id))? {
             return Err(StoreError::Conflict(format!(
                 "An item group named {name} already exists."
             )));
         }
         self.connection.execute(
-            "UPDATE item_groups SET name = ?, name_key = ?, hsn_code = ? WHERE id = ?",
-            params![name, name.to_lowercase(), hsn, id],
+            "UPDATE item_groups SET name = ?, name_key = ?, hsn_code = ?, tax_id = ? WHERE id = ?",
+            params![name, name.to_lowercase(), hsn, tax, id],
         )?;
         self.item_group(id)
     }
@@ -643,8 +662,8 @@ impl Store {
         let id: i64 = tx.query_row(
             "INSERT INTO items (name, name_key, item_code, group_id, item_usage, item_type, unit,
                  rate_minor, description, income_ledger_id, expense_ledger_id, hsn_code, barcode,
-                 track_item)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                 track_item, tax_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             params![
                 item.name,
                 item.name.to_lowercase(),
@@ -660,6 +679,7 @@ impl Store {
                 item.hsn_code,
                 item.barcode,
                 item.track_item,
+                item.tax_id,
             ],
             |row| row.get(0),
         )?;
@@ -693,7 +713,7 @@ impl Store {
         tx.execute(
             "UPDATE items SET name = ?, name_key = ?, item_code = ?, group_id = ?, item_usage = ?,
                  item_type = ?, unit = ?, rate_minor = ?, description = ?, income_ledger_id = ?,
-                 expense_ledger_id = ?, hsn_code = ?, barcode = ?, track_item = ?,
+                 expense_ledger_id = ?, hsn_code = ?, barcode = ?, track_item = ?, tax_id = ?,
                  revision = revision + 1
              WHERE id = ?",
             params![
@@ -711,6 +731,7 @@ impl Store {
                 item.hsn_code,
                 item.barcode,
                 item.track_item,
+                item.tax_id,
                 id,
             ],
         )?;
@@ -812,6 +833,7 @@ mod tests {
         let bad = ItemGroupInput {
             name: "Grains".into(),
             hsn_code: Some("12A4".into()),
+            tax_id: None,
         };
         match india.add_item_group(bad.clone()) {
             Err(StoreError::Invalid(text)) => assert!(text.contains("between 4 and 8 digits")),
@@ -838,6 +860,7 @@ mod tests {
             .add_item_group(ItemGroupInput {
                 name: "Consulting".into(),
                 hsn_code: Some("998877".into()),
+                tax_id: None,
             })
             .unwrap();
         let mut service = item("Audit");
@@ -976,6 +999,7 @@ mod tests {
             .add_item_group(ItemGroupInput {
                 name: "Grains".into(),
                 hsn_code: None,
+                tax_id: None,
             })
             .unwrap();
         let mut input = item("Basmati Rice");

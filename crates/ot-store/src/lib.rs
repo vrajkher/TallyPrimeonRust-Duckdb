@@ -13,5 +13,6 @@ pub mod parties;
 pub mod reports;
 pub mod series;
 mod store;
+pub mod taxes;
 
 pub use store::*;

@@ -1,7 +1,7 @@
 //! Items, item groups and units of measure (roadmap step 1.6).
 
 use leptos::{prelude::*, task::spawn_local};
-use ot_api_types::{Conversion, Item, ItemGroup, ItemInput, LedgerAccount, Unit};
+use ot_api_types::{Conversion, Item, ItemGroup, ItemInput, LedgerAccount, Tax, Unit};
 
 use crate::api::{self, ApiError};
 
@@ -27,6 +27,7 @@ struct Form {
     description: RwSignal<String>,
     income: RwSignal<String>,
     expense: RwSignal<String>,
+    tax: RwSignal<String>,
     conversions: RwSignal<Vec<(RwSignal<String>, RwSignal<String>)>>,
 }
 
@@ -48,6 +49,7 @@ impl Form {
             description: text(),
             income: text(),
             expense: text(),
+            tax: text(),
             conversions: RwSignal::new(Vec::new()),
         }
     }
@@ -78,6 +80,7 @@ impl Form {
             .set(text(item.and_then(|i| i.description.as_ref())));
         self.income.set(id_text(item.map(|i| i.income_ledger_id)));
         self.expense.set(id_text(item.map(|i| i.expense_ledger_id)));
+        self.tax.set(id_text(item.and_then(|i| i.tax_id)));
         self.conversions.set(
             item.map(|i| {
                 i.conversions
@@ -111,6 +114,7 @@ impl Form {
             hsn_code: optional(get(self.hsn_code)),
             barcode: optional(get(self.barcode)),
             track_item: false,
+            tax_id: id(self.tax),
             conversions: self
                 .conversions
                 .get_untracked()
@@ -166,6 +170,7 @@ pub fn ItemsView(on_signed_out: Callback<()>) -> impl IntoView {
     let busy = RwSignal::new(false);
     let units = RwSignal::new(Vec::<Unit>::new());
     let groups = RwSignal::new(Vec::<ItemGroup>::new());
+    let taxes = RwSignal::new(Vec::<Tax>::new());
     // Ledgers by root type; empty when the user may not read the chart of accounts.
     let ledgers = RwSignal::new(Vec::<LedgerAccount>::new());
     let form = Form::new();
@@ -190,6 +195,9 @@ pub fn ItemsView(on_signed_out: Callback<()>) -> impl IntoView {
             }
             if let Ok(list) = api::item_groups().await {
                 groups.set(list);
+            }
+            if let Ok(list) = api::taxes().await {
+                taxes.set(list);
             }
         });
     };
@@ -392,6 +400,26 @@ pub fn ItemsView(on_signed_out: Callback<()>) -> impl IntoView {
                         <input inputmode="numeric" maxlength="8" bind:value=form.hsn_code placeholder="From the group if empty"/>
                     </label>
                 </div>
+                <label class="field">
+                    <span>"Tax"</span>
+                    <select aria-label="Tax" bind:value=form.tax>
+                        <option value="">"None (use the item group's)"</option>
+                        {move || {
+                            taxes
+                                .get()
+                                .into_iter()
+                                .map(|t| {
+                                    let key = t.id.to_string();
+                                    let selected = {
+                                        let key = key.clone();
+                                        move || form.tax.get() == key
+                                    };
+                                    view! { <option value=key selected=selected>{format!("{} ({}%)", t.name, t.total_rate)}</option> }
+                                })
+                                .collect_view()
+                        }}
+                    </select>
+                </label>
                 <Show when=move || !ledgers.get().is_empty()>
                     <div class="field-row">
                         <LedgerSelect label="Sales account" value=form.income ledgers=income_ledgers/>
@@ -475,6 +503,7 @@ pub fn ItemsView(on_signed_out: Callback<()>) -> impl IntoView {
                                         <th class="num">"Rate"</th>
                                         <th>"Unit"</th>
                                         <th class="secondary">"HSN/SAC"</th>
+                                        <th class="secondary">"Tax"</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -491,6 +520,7 @@ pub fn ItemsView(on_signed_out: Callback<()>) -> impl IntoView {
                                                 <td class="num">{item.rate.clone()}</td>
                                                 <td>{item.unit.clone()}</td>
                                                 <td class="secondary">{item.hsn_code.clone().unwrap_or_default()}</td>
+                                                <td class="secondary">{item.tax_name.clone().unwrap_or_default()}</td>
                                             </tr>
                                         }
                                     }).collect_view()}

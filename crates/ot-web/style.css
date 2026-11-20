@@ -113,6 +113,7 @@ button.nav-link { width: 100%; border: 0; background: none; text-align: left; }
 .conversion { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .conversion select, .conversion input { min-height: 36px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
 .conversion input { width: 110px; }
+.tax-row select { flex: 1 1 180px; min-width: 0; }
 .list-view .num { text-align: right; font-variant-numeric: tabular-nums; }
 .series-form { display: grid; grid-template-columns: minmax(140px, 1.4fr) minmax(150px, 1.4fr) minmax(80px, .7fr) minmax(70px, .6fr) auto auto; align-items: end; gap: 12px; }
 .check { display: flex; align-items: center; gap: 8px; min-height: 40px; font-size: 13px; font-weight: 600; }

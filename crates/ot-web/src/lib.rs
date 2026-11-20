@@ -11,6 +11,7 @@ pub mod keys;
 mod number_series;
 mod parties;
 mod setup;
+mod taxes;
 mod views;
 
 use leptos::{prelude::*, task::spawn_local};
@@ -24,6 +25,7 @@ use crate::{
     number_series::SeriesView,
     parties::PartiesView,
     setup::SetupWizard,
+    taxes::TaxesView,
     views::{FieldSpec, FormView, Screen, Shell},
 };
 
@@ -115,6 +117,7 @@ fn App() -> impl IntoView {
             Action::Series => screen.set(Screen::Series),
             Action::Parties => screen.set(Screen::Parties),
             Action::Items => screen.set(Screen::Items),
+            Action::Taxes => screen.set(Screen::Taxes),
             _ => {}
         }
         counter.update_value(|n| *n += 1);
@@ -162,6 +165,7 @@ fn App() -> impl IntoView {
                     Screen::Series => view! { <SeriesView on_signed_out=on_signed_out/> }.into_any(),
                     Screen::Parties => view! { <PartiesView on_signed_out=on_signed_out/> }.into_any(),
                     Screen::Items => view! { <ItemsView on_signed_out=on_signed_out/> }.into_any(),
+                    Screen::Taxes => view! { <TaxesView on_signed_out=on_signed_out/> }.into_any(),
                 }}
             </Shell>
         }

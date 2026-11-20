@@ -468,6 +468,10 @@ impl Store {
             params![defaults.country, currency, start.to_string(), end.to_string(), gstin, bank_ledger_id, chart],
         )?;
         fill_default_settings(&tx, &chart)?;
+        // As Frappe's ensure_regional_records: GST ledgers and taxes for India.
+        if defaults.country == "India" {
+            crate::taxes::seed_gst(&tx)?;
+        }
         let settings = settings_of(&tx)?;
         tx.commit()?;
         Ok(SetupResult {
@@ -731,7 +735,11 @@ fn ledger_in_group(tx: &Transaction<'_>, name: &str, group: &str) -> Result<(), 
 /// first group of that type, else in a new group under the right root, as Frappe Books'
 /// `ensure_bank_account` and `ensure_discount_account` do. Discounts go under the
 /// indirect income group when there is one.
-fn ensure_ledger(tx: &Transaction<'_>, name: &str, kind: AccountType) -> Result<i64, StoreError> {
+pub(crate) fn ensure_ledger(
+    tx: &Transaction<'_>,
+    name: &str,
+    kind: AccountType,
+) -> Result<i64, StoreError> {
     if let Some((id, _)) = find_ledger(tx, name)? {
         tx.execute(
             "INSERT INTO ledger_accounts (ledger_id, account_type) VALUES (?, ?) ON CONFLICT (ledger_id) DO NOTHING",
@@ -757,26 +765,30 @@ fn ensure_ledger(tx: &Transaction<'_>, name: &str, kind: AccountType) -> Result<
         chart.groups.iter().find(|g| g.account_type == Some(kind))
     }
     .map(|g| g.id);
-    let group_id =
-        match group {
-            Some(id) => id,
-            None => {
-                let (group_name, root) = match kind {
-                    AccountType::Bank => ("Bank Accounts", RootType::Asset),
-                    _ => ("Indirect Income", RootType::Income),
-                };
-                let id: i64 = tx.query_row(
-                    "INSERT INTO account_groups (name, name_key) VALUES (?, ?) RETURNING id",
-                    params![group_name, group_name.to_lowercase()],
-                    |row| row.get(0),
-                )?;
-                tx.execute(
-                "INSERT INTO group_accounts (group_id, root_type, account_type) VALUES (?, ?, ?)",
-                params![id, root.label(), (kind == AccountType::Bank).then_some(kind.label())],
+    let group_id = match group {
+        Some(id) => id,
+        None => {
+            let (group_name, root) = match kind {
+                AccountType::Bank => ("Bank Accounts", RootType::Asset),
+                AccountType::Tax => ("Duties and Taxes", RootType::Liability),
+                _ => ("Indirect Income", RootType::Income),
+            };
+            let id: i64 = tx.query_row(
+                "INSERT INTO account_groups (name, name_key) VALUES (?, ?) RETURNING id",
+                params![group_name, group_name.to_lowercase()],
+                |row| row.get(0),
             )?;
-                id
-            }
-        };
+            tx.execute(
+                "INSERT INTO group_accounts (group_id, root_type, account_type) VALUES (?, ?, ?)",
+                params![
+                    id,
+                    root.label(),
+                    matches!(kind, AccountType::Bank | AccountType::Tax).then_some(kind.label())
+                ],
+            )?;
+            id
+        }
+    };
     let ledger_kind = if kind == AccountType::Bank {
         "bank"
     } else {

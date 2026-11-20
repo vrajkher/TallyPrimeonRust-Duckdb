@@ -272,6 +272,7 @@ const PARTY: &str = "Books Party";
 const ITEM: &str = "Books Item";
 const ITEM_GROUP: &str = "Books Item Group";
 const UNIT: &str = "Books Uom";
+const TAX: &str = "Books Tax";
 
 fn rule(method: &Method, path: &str) -> Option<Rule> {
     let path = path.strip_prefix("/api/v1").map_or(path, |rest| rest);
@@ -320,6 +321,12 @@ fn rule(method: &Method, path: &str) -> Option<Rule> {
             Rule::Any(&[(PARTY, Perm::Delete)])
         }
         (false, "/parties/{id}") => Rule::Any(&[(PARTY, Perm::Write)]),
+        (true, "/taxes" | "/taxes/{id}") => Rule::Any(&[(TAX, Perm::Read)]),
+        (false, "/taxes") => Rule::Any(&[(TAX, Perm::Create)]),
+        // Adding GST also adds tax ledgers to the chart.
+        (false, "/taxes/gst") => Rule::Admin,
+        (false, "/taxes/{id}") if *method == Method::DELETE => Rule::Any(&[(TAX, Perm::Delete)]),
+        (false, "/taxes/{id}") => Rule::Any(&[(TAX, Perm::Write)]),
         (true, "/items" | "/items/{id}") => Rule::Any(&[(ITEM, Perm::Read)]),
         (false, "/items") => Rule::Any(&[(ITEM, Perm::Create)]),
         (false, "/items/{id}") if *method == Method::DELETE => Rule::Any(&[(ITEM, Perm::Delete)]),

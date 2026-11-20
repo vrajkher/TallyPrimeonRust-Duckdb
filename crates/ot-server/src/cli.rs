@@ -81,6 +81,9 @@ pub enum Command {
     /// Units of measure.
     #[command(subcommand)]
     Unit(UnitCommand),
+    /// Tax templates, e.g. GST-18.
+    #[command(subcommand)]
+    Tax(TaxCommand),
     /// Copy the book to a backup file.
     Backup {
         /// Where to write the copy.
@@ -124,6 +127,25 @@ pub enum ItemCommand {
     },
     /// Delete an item by its ID, as `item list --json` shows it.
     Delete { id: i64 },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TaxCommand {
+    /// List the tax templates with their rows.
+    List,
+    /// Add India's GST ledgers and taxes (GST, IGST and exempt at each rate). Existing
+    /// ones are kept, so it is safe to run again.
+    AddGst,
+}
+
+fn tax_text(tax: &ot_store::taxes::Tax) -> String {
+    let rows = tax
+        .details
+        .iter()
+        .map(|d| format!("{} {}%", d.ledger_name, d.rate))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    format!("{:<16} {:>6}%  {rows}", tax.name, tax.total_rate)
 }
 
 #[derive(Debug, Subcommand)]
@@ -574,6 +596,24 @@ pub fn run(cli: &Cli, command: &Command, input: &mut dyn BufRead) -> Result<Outp
             Ok(Output::new(
                 format!("Deleted item {id}."),
                 json!({"deleted": id}),
+            ))
+        }
+        Command::Tax(TaxCommand::List) => {
+            let rows = open_existing(&path)?.taxes()?;
+            let text = rows.iter().map(tax_text).collect::<Vec<_>>().join("\n");
+            Ok(Output::new(text, &rows))
+        }
+        Command::Tax(TaxCommand::AddGst) => {
+            let mut store = open_existing(&path)?;
+            let before = store.taxes()?.len();
+            let rows = store.add_gst_taxes()?;
+            Ok(Output::new(
+                format!(
+                    "Added {} GST taxes; the book now has {}.",
+                    rows.len() - before,
+                    rows.len()
+                ),
+                &rows,
             ))
         }
         Command::Unit(UnitCommand::List) => {
@@ -1313,6 +1353,33 @@ mod tests {
         let kind = exec(&dir, &["item", "add", "Dal", "--type", "good"], "");
         assert_eq!(kind.unwrap_err().code, ExitCode::Invalid);
         exec(&dir, &["item", "delete", &id], "").unwrap();
+    }
+
+    #[test]
+    fn gst_taxes_are_added_and_listed_from_the_command_line() {
+        let dir = temp("taxes");
+        exec(&dir, &["migrate"], "").unwrap();
+        let empty = exec(&dir, &["--json", "tax", "list"], "").unwrap();
+        assert!(empty.value.as_array().unwrap().is_empty());
+        let added = exec(&dir, &["tax", "add-gst"], "").unwrap();
+        assert!(
+            added.text.starts_with("Added 18 GST taxes"),
+            "{}",
+            added.text
+        );
+        let again = exec(&dir, &["tax", "add-gst"], "").unwrap();
+        assert!(
+            again.text.starts_with("Added 0 GST taxes"),
+            "{}",
+            again.text
+        );
+        let list = exec(&dir, &["tax", "list"], "").unwrap();
+        assert!(
+            list.text
+                .contains("GST-18               18%  CGST 9% + SGST 9%"),
+            "{}",
+            list.text
+        );
     }
 
     #[test]

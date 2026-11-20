@@ -27,13 +27,15 @@ The first build compiles the bundled DuckDB library. When the app is running, op
 
 ### The new interface
 
-OpenTally is moving to a new interface written in Rust with [Leptos](https://leptos.dev) and compiled to WebAssembly. It runs at [http://127.0.0.1:3000/app/](http://127.0.0.1:3000/app/) next to the classic screens, and screens move to it one at a time. It already has sign-in, creating the first user, the company setup wizard, the Day Book with date, type and text filters, the Chart of Accounts, Parties, Items, and Number Series.
+OpenTally is moving to a new interface written in Rust with [Leptos](https://leptos.dev) and compiled to WebAssembly. It runs at [http://127.0.0.1:3000/app/](http://127.0.0.1:3000/app/) next to the classic screens, and screens move to it one at a time. It already has sign-in, creating the first user, the company setup wizard, the Day Book with date, type and text filters, the Chart of Accounts, Parties, Items, Taxes, and Number Series.
 
 The first time a System Manager opens it, the setup wizard asks for the company name, country, currency, chart of accounts, fiscal year and bank. Choosing a country fills in its currency, chart and fiscal year: India gets Tally's reserved groups and an April–March year. The wizard runs once.
 
 **Parties** holds your customers and suppliers. A customer defaults to the company's receivable ledger (Debtors) and a supplier to its payable ledger (Creditors); a party that is both chooses its own. For a GST-registered party, enter its GSTIN, which is checked and stored in capitals. An Indian address in a known state gives the party's place of supply. From the command line: `opentally party list|add|delete`.
 
 **Items** holds the goods and services you buy and sell, each with a unit, a rate, an HSN/SAC code and the sales and purchase accounts its invoices will post to. Leave the accounts on "Company default" to use the Sales and Purchase ledgers. Put items in groups to share an HSN code, and add other units with a conversion, e.g. 1 Bag = 25 Kg. For an Indian company, HSN/SAC codes must have 4 to 8 digits. From the command line: `opentally item list|add|delete` and `opentally unit list|add`.
+
+**Taxes** holds tax templates. Each row posts a percentage to a ledger, so GST-18 is CGST 9% plus SGST 9%. An Indian company starts with GST, IGST and exempt taxes at every GST rate and the CGST, SGST, IGST and Exempt ledgers under Duties & Taxes; **Add GST taxes** (or `opentally tax add-gst`) adds them to a book set up earlier. Choose an item's tax on the item. A tax that items use cannot be deleted.
 
 **Number Series** sets how documents are named, e.g. `SINV-1001`. Each document type has a default series; add your own prefix, start number and digits, or make another series the default. A series that has named a document cannot be deleted or restarted below its last number. The same is available from the command line as `opentally series list|add|set|delete`.
 
@@ -55,6 +57,7 @@ Then start OpenTally from the repository root as usual. Set `OPENTALLY_UI_DIR` t
 | Alt+A | Chart of Accounts |
 | Alt+P | Parties |
 | Alt+I | Items |
+| Alt+T | Taxes |
 | Alt+N | Number Series |
 | / | Search the list |
 | Page Up, Page Down | Previous or next page |

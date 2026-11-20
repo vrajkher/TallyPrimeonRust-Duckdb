@@ -4,7 +4,7 @@ use gloo_net::http::{Request, Response};
 use ot_api_types::{
     ApiErrorBody, ChartOfAccounts, ChartTemplate, CompanySetup, CountryDefaults, DayBook,
     DayBookFilter, Item, ItemGroup, ItemInput, NewNumberSeries, NumberSeries, Party, PartyInput,
-    SeriesType, SessionState, Setup, SignIn, Unit,
+    SeriesType, SessionState, Setup, SignIn, Tax, TaxInput, Unit,
 };
 use serde::de::DeserializeOwned;
 
@@ -216,6 +216,25 @@ pub async fn save_item(id: Option<i64>, input: &ItemInput) -> Result<Item, ApiEr
 
 pub async fn delete_item(id: i64) -> Result<(), ApiError> {
     delete(&format!("/api/v1/items/{id}")).await
+}
+
+pub async fn taxes() -> Result<Vec<Tax>, ApiError> {
+    get("/api/v1/taxes").await
+}
+
+pub async fn save_tax(id: Option<i64>, input: &TaxInput) -> Result<Tax, ApiError> {
+    match id {
+        Some(id) => post(&format!("/api/v1/taxes/{id}"), input).await,
+        None => post("/api/v1/taxes", input).await,
+    }
+}
+
+pub async fn delete_tax(id: i64) -> Result<(), ApiError> {
+    delete(&format!("/api/v1/taxes/{id}")).await
+}
+
+pub async fn add_gst_taxes() -> Result<Vec<Tax>, ApiError> {
+    post("/api/v1/taxes/gst", &serde_json::json!({})).await
 }
 
 pub async fn units() -> Result<Vec<Unit>, ApiError> {

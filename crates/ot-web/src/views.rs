@@ -166,6 +166,7 @@ pub enum Screen {
     Chart,
     Parties,
     Items,
+    Taxes,
     Series,
 }
 
@@ -195,6 +196,7 @@ pub fn Shell(
                     <NavButton screen=screen target=Screen::Chart label="Chart of Accounts" key="Alt+A"/>
                     <NavButton screen=screen target=Screen::Parties label="Parties" key="Alt+P"/>
                     <NavButton screen=screen target=Screen::Items label="Items" key="Alt+I"/>
+                    <NavButton screen=screen target=Screen::Taxes label="Taxes" key="Alt+T"/>
                     <NavButton screen=screen target=Screen::Series label="Number Series" key="Alt+N"/>
                     <a class="nav-link" href="/">"Classic screens"</a>
                 </nav>

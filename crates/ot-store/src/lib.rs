@@ -7,6 +7,7 @@ pub mod auth;
 pub mod bank;
 pub mod chart;
 pub mod imports;
+pub mod items;
 pub mod migrate;
 pub mod parties;
 pub mod reports;

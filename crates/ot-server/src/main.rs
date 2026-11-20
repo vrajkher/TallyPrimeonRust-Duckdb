@@ -502,6 +502,121 @@ async fn delete_party(State(db): State<Database>, Path(id): Path<i64>) -> ApiRes
         .map_err(ApiError)
 }
 
+async fn units(State(db): State<Database>) -> ApiResult<Json<Vec<ot_store::items::Unit>>> {
+    db.read(|store| store.units())
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn add_unit(
+    State(db): State<Database>,
+    Json(input): Json<ot_store::items::NewUnit>,
+) -> ApiResult<(StatusCode, Json<ot_store::items::Unit>)> {
+    db.write(move |store| store.add_unit(input))
+        .await
+        .map(|unit| (StatusCode::CREATED, Json(unit)))
+        .map_err(ApiError)
+}
+
+async fn delete_unit(
+    State(db): State<Database>,
+    Path(name): Path<String>,
+) -> ApiResult<StatusCode> {
+    db.write(move |store| store.delete_unit(&name))
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(ApiError)
+}
+
+async fn item_groups(
+    State(db): State<Database>,
+) -> ApiResult<Json<Vec<ot_store::items::ItemGroup>>> {
+    db.read(|store| store.item_groups())
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn add_item_group(
+    State(db): State<Database>,
+    Json(input): Json<ot_store::items::ItemGroupInput>,
+) -> ApiResult<(StatusCode, Json<ot_store::items::ItemGroup>)> {
+    db.write(move |store| store.add_item_group(input))
+        .await
+        .map(|group| (StatusCode::CREATED, Json(group)))
+        .map_err(ApiError)
+}
+
+async fn update_item_group(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+    Json(input): Json<ot_store::items::ItemGroupInput>,
+) -> ApiResult<Json<ot_store::items::ItemGroup>> {
+    db.write(move |store| store.update_item_group(id, input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn delete_item_group(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+) -> ApiResult<StatusCode> {
+    db.write(move |store| store.delete_item_group(id))
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(ApiError)
+}
+
+async fn items(
+    State(db): State<Database>,
+    Query(filter): Query<ot_store::items::ItemFilter>,
+) -> ApiResult<Json<Vec<ot_store::items::Item>>> {
+    db.read(move |store| store.items(&filter))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn item(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<ot_store::items::Item>> {
+    db.read(move |store| store.item(id))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn add_item(
+    State(db): State<Database>,
+    Json(input): Json<ot_store::items::ItemInput>,
+) -> ApiResult<(StatusCode, Json<ot_store::items::Item>)> {
+    db.write(move |store| store.add_item(input))
+        .await
+        .map(|item| (StatusCode::CREATED, Json(item)))
+        .map_err(ApiError)
+}
+
+async fn update_item(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+    Json(input): Json<ot_store::items::ItemInput>,
+) -> ApiResult<Json<ot_store::items::Item>> {
+    db.write(move |store| store.update_item(id, input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn delete_item(State(db): State<Database>, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    db.write(move |store| store.delete_item(id))
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(ApiError)
+}
+
 /// Indian states and union territories, for address forms.
 async fn indian_states() -> Json<Vec<&'static str>> {
     Json(
@@ -585,6 +700,18 @@ fn book_routes() -> Router<AppState> {
             get(party).post(update_party).delete(delete_party),
         )
         .route("/regional/indian-states", get(indian_states))
+        .route("/units", get(units).post(add_unit))
+        .route("/units/{name}", delete(delete_unit))
+        .route("/item-groups", get(item_groups).post(add_item_group))
+        .route(
+            "/item-groups/{id}",
+            post(update_item_group).delete(delete_item_group),
+        )
+        .route("/items", get(items).post(add_item))
+        .route(
+            "/items/{id}",
+            get(item).post(update_item).delete(delete_item),
+        )
         .route("/company/countries", get(company_countries))
         .route("/company/defaults", get(company_defaults))
         .route("/company/setup", post(company_setup))

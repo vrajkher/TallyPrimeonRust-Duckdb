@@ -269,6 +269,9 @@ const LEDGER: &str = "Books Ledger Entry";
 const SETTINGS: &str = "Books Accounting Settings";
 const SERIES: &str = "Books Number Series";
 const PARTY: &str = "Books Party";
+const ITEM: &str = "Books Item";
+const ITEM_GROUP: &str = "Books Item Group";
+const UNIT: &str = "Books Uom";
 
 fn rule(method: &Method, path: &str) -> Option<Rule> {
     let path = path.strip_prefix("/api/v1").map_or(path, |rest| rest);
@@ -317,6 +320,19 @@ fn rule(method: &Method, path: &str) -> Option<Rule> {
             Rule::Any(&[(PARTY, Perm::Delete)])
         }
         (false, "/parties/{id}") => Rule::Any(&[(PARTY, Perm::Write)]),
+        (true, "/items" | "/items/{id}") => Rule::Any(&[(ITEM, Perm::Read)]),
+        (false, "/items") => Rule::Any(&[(ITEM, Perm::Create)]),
+        (false, "/items/{id}") if *method == Method::DELETE => Rule::Any(&[(ITEM, Perm::Delete)]),
+        (false, "/items/{id}") => Rule::Any(&[(ITEM, Perm::Write)]),
+        (true, "/item-groups") => Rule::Any(&[(ITEM_GROUP, Perm::Read)]),
+        (false, "/item-groups") => Rule::Any(&[(ITEM_GROUP, Perm::Create)]),
+        (false, "/item-groups/{id}") if *method == Method::DELETE => {
+            Rule::Any(&[(ITEM_GROUP, Perm::Delete)])
+        }
+        (false, "/item-groups/{id}") => Rule::Any(&[(ITEM_GROUP, Perm::Write)]),
+        (true, "/units") => Rule::Any(&[(UNIT, Perm::Read)]),
+        (false, "/units") => Rule::Any(&[(UNIT, Perm::Create)]),
+        (false, "/units/{name}") => Rule::Any(&[(UNIT, Perm::Delete)]),
         (true, "/company/countries" | "/company/defaults" | "/regional/indian-states") => {
             Rule::Signed
         }

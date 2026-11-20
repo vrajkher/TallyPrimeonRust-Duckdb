@@ -75,6 +75,12 @@ pub enum Command {
     /// Customers and suppliers.
     #[command(subcommand)]
     Party(PartyCommand),
+    /// Items you buy and sell.
+    #[command(subcommand)]
+    Item(ItemCommand),
+    /// Units of measure.
+    #[command(subcommand)]
+    Unit(UnitCommand),
     /// Copy the book to a backup file.
     Backup {
         /// Where to write the copy.
@@ -91,6 +97,57 @@ pub enum Command {
         #[arg(long)]
         yes: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ItemCommand {
+    /// List items, optionally those matching text in the name, code, HSN or barcode.
+    List {
+        #[arg(long)]
+        search: Option<String>,
+    },
+    /// Add an item. Its sales and purchase accounts come from the company defaults.
+    Add {
+        name: String,
+        /// product or service (default product).
+        #[arg(long = "type", default_value = "product")]
+        item_type: String,
+        /// The unit it is counted in (default Unit).
+        #[arg(long)]
+        unit: Option<String>,
+        /// The rate in the company currency, e.g. 125.50.
+        #[arg(long)]
+        rate: Option<String>,
+        /// The HSN/SAC code.
+        #[arg(long)]
+        hsn: Option<String>,
+    },
+    /// Delete an item by its ID, as `item list --json` shows it.
+    Delete { id: i64 },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum UnitCommand {
+    /// List the units of measure.
+    List,
+    /// Add a unit of measure.
+    Add {
+        name: String,
+        /// Quantities in this unit must be whole numbers.
+        #[arg(long)]
+        whole: bool,
+    },
+}
+
+fn item_text(item: &ot_store::items::Item) -> String {
+    format!(
+        "{:>5}  {:<32} {:>12} per {:<6} {}",
+        item.id,
+        item.name,
+        item.rate,
+        item.unit,
+        item.hsn_code.as_deref().unwrap_or("")
+    )
 }
 
 #[derive(Debug, Subcommand)]
@@ -475,6 +532,65 @@ pub fn run(cli: &Cli, command: &Command, input: &mut dyn BufRead) -> Result<Outp
                 ),
                 &applied,
             ))
+        }
+        Command::Item(ItemCommand::List { search }) => {
+            let filter = ot_store::items::ItemFilter {
+                group_id: None,
+                q: search.clone(),
+            };
+            let rows = open_existing(&path)?.items(&filter)?;
+            let text = rows.iter().map(item_text).collect::<Vec<_>>().join("\n");
+            Ok(Output::new(text, &rows))
+        }
+        Command::Item(ItemCommand::Add {
+            name,
+            item_type,
+            unit,
+            rate,
+            hsn,
+        }) => {
+            let item_type = serde_json::from_value(json!(item_type)).map_err(|_| {
+                CliError::new(
+                    ExitCode::Invalid,
+                    format!("Unknown item type {item_type}; use product or service."),
+                )
+            })?;
+            let input = ot_store::items::ItemInput {
+                name: name.clone(),
+                item_type,
+                unit: unit.clone(),
+                rate: rate.clone(),
+                hsn_code: hsn.clone(),
+                ..Default::default()
+            };
+            let item = open_existing(&path)?.add_item(input)?;
+            Ok(Output::new(
+                format!("Added {}", item_text(&item).trim_start()),
+                &item,
+            ))
+        }
+        Command::Item(ItemCommand::Delete { id }) => {
+            open_existing(&path)?.delete_item(*id)?;
+            Ok(Output::new(
+                format!("Deleted item {id}."),
+                json!({"deleted": id}),
+            ))
+        }
+        Command::Unit(UnitCommand::List) => {
+            let rows = open_existing(&path)?.units()?;
+            let text = rows
+                .iter()
+                .map(|u| format!("{}{}", u.name, if u.is_whole { "  (whole)" } else { "" }))
+                .collect::<Vec<_>>()
+                .join("\n");
+            Ok(Output::new(text, &rows))
+        }
+        Command::Unit(UnitCommand::Add { name, whole }) => {
+            let unit = open_existing(&path)?.add_unit(ot_store::items::NewUnit {
+                name: name.clone(),
+                is_whole: *whole,
+            })?;
+            Ok(Output::new(format!("Added unit {}.", unit.name), &unit))
         }
         Command::Party(PartyCommand::List { role, search }) => {
             let filter = ot_store::parties::PartyFilter {
@@ -1148,6 +1264,55 @@ mod tests {
         exec(&dir, &["party", "delete", &id.to_string()], "").unwrap();
         let gone = exec(&dir, &["party", "delete", &id.to_string()], "");
         assert_eq!(gone.unwrap_err().code, ExitCode::Missing);
+    }
+
+    #[test]
+    fn items_and_units_are_managed_from_the_command_line() {
+        let dir = temp("items");
+        exec(&dir, &["migrate"], "").unwrap();
+        // A book whose company is not set up has no Sales ledger to default to.
+        let no_account = exec(&dir, &["item", "add", "Rice"], "");
+        assert_eq!(no_account.unwrap_err().code, ExitCode::Invalid);
+        let book = dir.join("book.duckdb");
+        {
+            let mut store = Store::open(&book).unwrap();
+            let setup: ot_store::chart::CompanySetup = serde_json::from_value(json!({
+                "company_name": "Shree Traders", "country": "India", "bank_name": "HDFC Bank"
+            }))
+            .unwrap();
+            store
+                .setup_company(setup, ot_core::setup::today_utc())
+                .unwrap();
+        }
+        exec(&dir, &["unit", "add", "Bag", "--whole"], "").unwrap();
+        let units = exec(&dir, &["--json", "unit", "list"], "").unwrap();
+        assert_eq!(units.value.as_array().unwrap().len(), 7);
+        let added = exec(
+            &dir,
+            &[
+                "--json",
+                "item",
+                "add",
+                "Basmati Rice",
+                "--unit",
+                "Kg",
+                "--rate",
+                "125.5",
+                "--hsn",
+                "1006",
+            ],
+            "",
+        )
+        .unwrap();
+        assert_eq!(added.value["rate"], "125.50");
+        let id = added.value["id"].as_i64().unwrap().to_string();
+        let found = exec(&dir, &["--json", "item", "list", "--search", "rice"], "").unwrap();
+        assert_eq!(found.value.as_array().unwrap().len(), 1);
+        let bad = exec(&dir, &["item", "add", "Dal", "--hsn", "12A4"], "");
+        assert_eq!(bad.unwrap_err().code, ExitCode::Invalid);
+        let kind = exec(&dir, &["item", "add", "Dal", "--type", "good"], "");
+        assert_eq!(kind.unwrap_err().code, ExitCode::Invalid);
+        exec(&dir, &["item", "delete", &id], "").unwrap();
     }
 
     #[test]

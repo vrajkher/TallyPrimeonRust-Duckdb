@@ -10,7 +10,8 @@
 
 use std::{fmt, str::FromStr};
 
-use rust_decimal::{Decimal, RoundingStrategy};
+pub use rust_decimal::Decimal;
+use rust_decimal::RoundingStrategy;
 use serde::{Deserialize, Serialize};
 
 /// Amounts must stay below 10^12 whole units. Frappe Books stores numbers as

@@ -3,8 +3,8 @@
 use gloo_net::http::{Request, Response};
 use ot_api_types::{
     ApiErrorBody, ChartOfAccounts, ChartTemplate, CompanySetup, CountryDefaults, DayBook,
-    DayBookFilter, NewNumberSeries, NumberSeries, Party, PartyInput, SeriesType, SessionState,
-    Setup, SignIn,
+    DayBookFilter, Item, ItemGroup, ItemInput, NewNumberSeries, NumberSeries, Party, PartyInput,
+    SeriesType, SessionState, Setup, SignIn, Unit,
 };
 use serde::de::DeserializeOwned;
 
@@ -197,6 +197,49 @@ pub async fn save_party(id: Option<i64>, input: &PartyInput) -> Result<Party, Ap
 
 pub async fn delete_party(id: i64) -> Result<(), ApiError> {
     delete(&format!("/api/v1/parties/{id}")).await
+}
+
+pub async fn items(q: &str) -> Result<Vec<Item>, ApiError> {
+    if q.trim().is_empty() {
+        get("/api/v1/items").await
+    } else {
+        get(&format!("/api/v1/items?q={}", encode(q.trim()))).await
+    }
+}
+
+pub async fn save_item(id: Option<i64>, input: &ItemInput) -> Result<Item, ApiError> {
+    match id {
+        Some(id) => post(&format!("/api/v1/items/{id}"), input).await,
+        None => post("/api/v1/items", input).await,
+    }
+}
+
+pub async fn delete_item(id: i64) -> Result<(), ApiError> {
+    delete(&format!("/api/v1/items/{id}")).await
+}
+
+pub async fn units() -> Result<Vec<Unit>, ApiError> {
+    get("/api/v1/units").await
+}
+
+pub async fn add_unit(name: &str, is_whole: bool) -> Result<Unit, ApiError> {
+    post(
+        "/api/v1/units",
+        &serde_json::json!({"name": name, "is_whole": is_whole}),
+    )
+    .await
+}
+
+pub async fn item_groups() -> Result<Vec<ItemGroup>, ApiError> {
+    get("/api/v1/item-groups").await
+}
+
+pub async fn add_item_group(name: &str, hsn_code: Option<String>) -> Result<ItemGroup, ApiError> {
+    post(
+        "/api/v1/item-groups",
+        &serde_json::json!({"name": name, "hsn_code": hsn_code}),
+    )
+    .await
 }
 
 pub async fn indian_states() -> Result<Vec<String>, ApiError> {

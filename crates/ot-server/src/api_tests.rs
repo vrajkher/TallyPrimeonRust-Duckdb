@@ -1127,3 +1127,134 @@ async fn parties_follow_frappe_roles_and_revisions() {
         StatusCode::NOT_FOUND
     );
 }
+
+#[tokio::test]
+async fn items_groups_and_units_follow_frappe_roles() {
+    let app = App::new();
+    let asha = set_up_admin(&app).await;
+    app.post(
+        "/api/v1/company/setup",
+        &asha.write(),
+        json!({"company_name": "Shree Traders", "country": "India", "bank_name": "HDFC Bank"}),
+    )
+    .await;
+
+    let units: Vec<ot_api_types::Unit> =
+        serde_json::from_value(app.get("/api/v1/units", &asha.read()).await.body).unwrap();
+    assert_eq!(units.len(), 6);
+    let bag = app
+        .post(
+            "/api/v1/units",
+            &asha.write(),
+            json!({"name": "Bag", "is_whole": true}),
+        )
+        .await;
+    assert_eq!(bag.status, StatusCode::CREATED, "{}", bag.body);
+    let group = app
+        .post(
+            "/api/v1/item-groups",
+            &asha.write(),
+            json!({"name": "Grains", "hsn_code": "1006"}),
+        )
+        .await;
+    assert_eq!(group.status, StatusCode::CREATED, "{}", group.body);
+    let bad_hsn = app
+        .post(
+            "/api/v1/item-groups",
+            &asha.write(),
+            json!({"name": "Bad", "hsn_code": "12A4"}),
+        )
+        .await;
+    assert_eq!(bad_hsn.status, StatusCode::BAD_REQUEST);
+
+    let input = ot_api_types::ItemInput {
+        name: "Basmati Rice".into(),
+        group_id: group.body["id"].as_i64(),
+        usage: "both".into(),
+        item_type: "product".into(),
+        unit: Some("Kg".into()),
+        rate: Some("125.5".into()),
+        conversions: vec![ot_api_types::Conversion {
+            unit: "Bag".into(),
+            factor: "25".into(),
+        }],
+        ..Default::default()
+    };
+    let created = app
+        .post(
+            "/api/v1/items",
+            &asha.write(),
+            serde_json::to_value(&input).unwrap(),
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let rice: ot_api_types::Item = serde_json::from_value(created.body).unwrap();
+    assert_eq!(rice.rate, "125.50");
+    assert_eq!(
+        rice.hsn_code.as_deref(),
+        Some("1006"),
+        "taken from the group"
+    );
+    assert_eq!(rice.income_ledger_name, "Sales");
+    assert_eq!(rice.expense_ledger_name, "Purchase");
+    assert_eq!(rice.conversions[0].factor, "25");
+
+    let path = format!("/api/v1/items/{}", rice.id);
+    let stale = app
+        .post(&path, &asha.write(), serde_json::to_value(&input).unwrap())
+        .await;
+    assert_eq!(stale.status, StatusCode::BAD_REQUEST, "no revision sent");
+    let in_use = app.delete("/api/v1/units/Bag", &asha.write()).await;
+    assert_eq!(in_use.status, StatusCode::BAD_REQUEST);
+    let found = app.get("/api/v1/items?q=basmati", &asha.read()).await;
+    assert_eq!(found.body.as_array().unwrap().len(), 1);
+
+    for (username, role) in [("ravi", "books_user"), ("chetan", "books_cashier")] {
+        app.post(
+            "/api/v1/users",
+            &asha.write(),
+            json!({"username": username, "full_name": username, "password": "another long secret", "roles": [role]}),
+        )
+        .await;
+    }
+    let sign_in = |username: &'static str| {
+        let app = &app;
+        async move {
+            Browser::from(
+                &app.post(
+                    "/api/v1/session",
+                    &[],
+                    json!({"username": username, "password": "another long secret"}),
+                )
+                .await,
+            )
+        }
+    };
+    let ravi = sign_in("ravi").await;
+    let chetan = sign_in("chetan").await;
+    // Books Users make items but not units; cashiers only read.
+    let dal = app
+        .post("/api/v1/items", &ravi.write(), json!({"name": "Toor Dal"}))
+        .await;
+    assert_eq!(dal.status, StatusCode::CREATED, "{}", dal.body);
+    assert_eq!(
+        app.post("/api/v1/units", &ravi.write(), json!({"name": "Box"}))
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.get("/api/v1/items", &chetan.read()).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.post("/api/v1/items", &chetan.write(), json!({"name": "Sugar"}))
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.delete(&path, &asha.write()).await.status,
+        StatusCode::NO_CONTENT
+    );
+}

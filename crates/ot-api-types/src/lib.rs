@@ -208,6 +208,91 @@ pub struct PartyInput {
     pub revision: Option<i32>,
 }
 
+/// A unit of measure from `GET /api/v1/units`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Unit {
+    pub name: String,
+    /// Quantities in this unit must be whole numbers.
+    pub is_whole: bool,
+    #[serde(default)]
+    pub used_by: i64,
+}
+
+/// An item group from `GET /api/v1/item-groups`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemGroup {
+    pub id: i64,
+    pub name: String,
+    pub hsn_code: Option<String>,
+    #[serde(default)]
+    pub items: i64,
+}
+
+/// One other unit an item is traded in: one `unit` is `factor` of the item's unit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Conversion {
+    pub unit: String,
+    pub factor: String,
+}
+
+/// An item from `GET /api/v1/items`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Item {
+    pub id: i64,
+    pub name: String,
+    pub item_code: Option<String>,
+    pub group_id: Option<i64>,
+    pub group_name: Option<String>,
+    /// `purchases`, `sales` or `both`.
+    pub usage: String,
+    /// `product` or `service`.
+    pub item_type: String,
+    pub unit: String,
+    /// A decimal amount in the company currency, e.g. `"125.50"`.
+    pub rate: String,
+    pub description: Option<String>,
+    pub income_ledger_id: i64,
+    pub income_ledger_name: String,
+    pub expense_ledger_id: i64,
+    pub expense_ledger_name: String,
+    pub hsn_code: Option<String>,
+    pub barcode: Option<String>,
+    pub track_item: bool,
+    pub conversions: Vec<Conversion>,
+    pub revision: i32,
+}
+
+/// `POST /api/v1/items`, and `POST /api/v1/items/{id}` with `revision` set. Missing
+/// accounts take the company defaults.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemInput {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<i64>,
+    pub usage: String,
+    pub item_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub income_ledger_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expense_ledger_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hsn_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub barcode: Option<String>,
+    pub track_item: bool,
+    pub conversions: Vec<Conversion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<i32>,
+}
+
 /// `POST /api/v1/session`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignIn {

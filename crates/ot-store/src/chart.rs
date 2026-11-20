@@ -457,6 +457,10 @@ impl Store {
                 ensure_ledger(&tx, name, kind)?;
             }
         }
+        // Items sell into a Sales ledger and buy into Purchase. Frappe's standard chart
+        // has a Sales ledger; Tally's reserved groups have only the groups.
+        ledger_in_group(&tx, "Sales", "Sales Accounts")?;
+        ledger_in_group(&tx, "Purchase", "Purchase Accounts")?;
         tx.execute(
             "UPDATE accounting_settings SET country = ?, currency = ?, fiscal_year_start = ?,
                     fiscal_year_end = ?, gstin = ?, bank_ledger_id = ?, chart = ?, setup_complete = TRUE
@@ -693,6 +697,34 @@ impl Store {
         tx.commit()?;
         Ok(settings)
     }
+}
+
+/// Adds a general ledger `name` to the group `group` when the group exists and no
+/// ledger has that name.
+fn ledger_in_group(tx: &Transaction<'_>, name: &str, group: &str) -> Result<(), StoreError> {
+    if find_ledger(tx, name)?.is_some() {
+        return Ok(());
+    }
+    let group_id: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM account_groups WHERE name_key = ?",
+            [group.to_lowercase()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(group_id) = group_id else {
+        return Ok(());
+    };
+    let id: i64 = tx.query_row(
+        "INSERT INTO ledgers (name, name_key, kind) VALUES (?, ?, 'general') RETURNING id",
+        params![name, name.to_lowercase()],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "INSERT INTO ledger_groups VALUES (?, ?)",
+        params![id, group_id],
+    )?;
+    Ok(())
 }
 
 /// A ledger of the given type: the existing one of that name, else a new one in the

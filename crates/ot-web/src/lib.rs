@@ -6,6 +6,7 @@
 mod accounts;
 mod api;
 mod day_book;
+mod items;
 pub mod keys;
 mod number_series;
 mod parties;
@@ -18,6 +19,7 @@ use ot_api_types::{Setup, SignIn, User};
 use crate::{
     accounts::ChartView,
     day_book::DayBookView,
+    items::ItemsView,
     keys::{Action, Modifiers},
     number_series::SeriesView,
     parties::PartiesView,
@@ -112,6 +114,7 @@ fn App() -> impl IntoView {
             Action::Accounts => screen.set(Screen::Chart),
             Action::Series => screen.set(Screen::Series),
             Action::Parties => screen.set(Screen::Parties),
+            Action::Items => screen.set(Screen::Items),
             _ => {}
         }
         counter.update_value(|n| *n += 1);
@@ -158,6 +161,7 @@ fn App() -> impl IntoView {
                     Screen::Chart => view! { <ChartView on_signed_out=on_signed_out/> }.into_any(),
                     Screen::Series => view! { <SeriesView on_signed_out=on_signed_out/> }.into_any(),
                     Screen::Parties => view! { <PartiesView on_signed_out=on_signed_out/> }.into_any(),
+                    Screen::Items => view! { <ItemsView on_signed_out=on_signed_out/> }.into_any(),
                 }}
             </Shell>
         }

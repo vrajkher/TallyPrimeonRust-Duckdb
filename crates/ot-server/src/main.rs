@@ -394,6 +394,66 @@ async fn update_accounting_settings(
         .map_err(ApiError)
 }
 
+async fn number_series(
+    State(db): State<Database>,
+) -> ApiResult<Json<Vec<ot_store::series::SeriesRow>>> {
+    db.read(|store| store.number_series())
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+#[derive(serde::Serialize)]
+struct SeriesTypeInfo {
+    key: &'static str,
+    label: &'static str,
+    standard_prefix: &'static str,
+}
+
+async fn series_types() -> Json<Vec<SeriesTypeInfo>> {
+    Json(
+        ot_core::series::SeriesType::ALL
+            .into_iter()
+            .map(|kind| SeriesTypeInfo {
+                key: kind.key(),
+                label: kind.label(),
+                standard_prefix: kind.standard_prefix(),
+            })
+            .collect(),
+    )
+}
+
+async fn add_number_series(
+    State(db): State<Database>,
+    Json(input): Json<ot_store::series::NewSeries>,
+) -> ApiResult<(StatusCode, Json<ot_store::series::SeriesRow>)> {
+    db.write(move |store| store.add_number_series(input))
+        .await
+        .map(|row| (StatusCode::CREATED, Json(row)))
+        .map_err(ApiError)
+}
+
+async fn update_number_series(
+    State(db): State<Database>,
+    Path(prefix): Path<String>,
+    Json(input): Json<ot_store::series::SeriesUpdate>,
+) -> ApiResult<Json<ot_store::series::SeriesRow>> {
+    db.write(move |store| store.update_number_series(&prefix, input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn delete_number_series(
+    State(db): State<Database>,
+    Path(prefix): Path<String>,
+) -> ApiResult<StatusCode> {
+    db.write(move |store| store.delete_number_series(&prefix))
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(ApiError)
+}
+
 async fn company_countries() -> Json<Vec<String>> {
     Json(ot_core::setup::countries())
 }
@@ -454,6 +514,12 @@ fn book_routes() -> Router<AppState> {
         .route(
             "/settings/accounting",
             get(accounting_settings).post(update_accounting_settings),
+        )
+        .route("/series", get(number_series).post(add_number_series))
+        .route("/series/types", get(series_types))
+        .route(
+            "/series/{prefix}",
+            post(update_number_series).delete(delete_number_series),
         )
         .route("/company/countries", get(company_countries))
         .route("/company/defaults", get(company_defaults))

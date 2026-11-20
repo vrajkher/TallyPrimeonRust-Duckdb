@@ -16,6 +16,7 @@ pub const DEFAULT_PAD_ZEROS: u8 = 4;
 
 /// The document types numbered by a series, with their standard prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SeriesType {
     JournalEntry,
     Payment,
@@ -40,6 +41,40 @@ impl SeriesType {
         Self::StockMovement,
         Self::SalesQuote,
     ];
+
+    /// The stable key used in storage and the API, e.g. `sales_invoice`.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::JournalEntry => "journal_entry",
+            Self::Payment => "payment",
+            Self::PurchaseInvoice => "purchase_invoice",
+            Self::PricingRule => "pricing_rule",
+            Self::PurchaseReceipt => "purchase_receipt",
+            Self::Shipment => "shipment",
+            Self::SalesInvoice => "sales_invoice",
+            Self::StockMovement => "stock_movement",
+            Self::SalesQuote => "sales_quote",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.key() == key)
+    }
+
+    /// The document type's name for people, e.g. "Sales Invoice".
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::JournalEntry => "Journal Entry",
+            Self::Payment => "Payment",
+            Self::PurchaseInvoice => "Purchase Invoice",
+            Self::PricingRule => "Pricing Rule",
+            Self::PurchaseReceipt => "Purchase Receipt",
+            Self::Shipment => "Shipment",
+            Self::SalesInvoice => "Sales Invoice",
+            Self::StockMovement => "Stock Movement",
+            Self::SalesQuote => "Sales Quote",
+        }
+    }
 
     /// The prefix used when no series is chosen.
     pub fn standard_prefix(self) -> &'static str {
@@ -236,6 +271,18 @@ mod tests {
         assert_eq!(series.peek().unwrap(), "SHPM-2001");
         series.restart_from(1500);
         assert_eq!(series.peek().unwrap(), "SHPM-2001");
+    }
+
+    #[test]
+    fn keys_round_trip_and_match_serde() {
+        for kind in SeriesType::ALL {
+            assert_eq!(SeriesType::from_key(kind.key()), Some(kind));
+            assert_eq!(
+                serde_json::to_value(kind).unwrap(),
+                serde_json::json!(kind.key())
+            );
+        }
+        assert_eq!(SeriesType::from_key("Sales Invoice"), None);
     }
 
     #[test]

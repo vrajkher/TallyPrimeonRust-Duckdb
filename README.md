@@ -27,9 +27,11 @@ The first build compiles the bundled DuckDB library. When the app is running, op
 
 ### The new interface
 
-OpenTally is moving to a new interface written in Rust with [Leptos](https://leptos.dev) and compiled to WebAssembly. It runs at [http://127.0.0.1:3000/app/](http://127.0.0.1:3000/app/) next to the classic screens, and screens move to it one at a time. It already has sign-in, creating the first user, the company setup wizard, the Day Book with date, type and text filters, and the Chart of Accounts.
+OpenTally is moving to a new interface written in Rust with [Leptos](https://leptos.dev) and compiled to WebAssembly. It runs at [http://127.0.0.1:3000/app/](http://127.0.0.1:3000/app/) next to the classic screens, and screens move to it one at a time. It already has sign-in, creating the first user, the company setup wizard, the Day Book with date, type and text filters, the Chart of Accounts, and Number Series.
 
 The first time a System Manager opens it, the setup wizard asks for the company name, country, currency, chart of accounts, fiscal year and bank. Choosing a country fills in its currency, chart and fiscal year: India gets Tally's reserved groups and an April–March year. The wizard runs once.
+
+**Number Series** sets how documents are named, e.g. `SINV-1001`. Each document type has a default series; add your own prefix, start number and digits, or make another series the default. A series that has named a document cannot be deleted or restarted below its last number. The same is available from the command line as `opentally series list|add|set|delete`.
 
 Build it once, and again after changing it:
 
@@ -47,6 +49,7 @@ Then start OpenTally from the repository root as usual. Set `OPENTALLY_UI_DIR` t
 | F4, F5, F6, F7 | Contra, Payment, Receipt or Journal entry (on the classic screens for now) |
 | Alt+D | Day Book |
 | Alt+A | Chart of Accounts |
+| Alt+N | Number Series |
 | / | Search the list |
 | Page Up, Page Down | Previous or next page |
 | Esc | Close a message |

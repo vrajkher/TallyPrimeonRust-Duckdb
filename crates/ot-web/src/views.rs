@@ -164,6 +164,7 @@ where
 pub enum Screen {
     DayBook,
     Chart,
+    Series,
 }
 
 /// The signed-in workspace: sidebar, top bar and content.
@@ -190,6 +191,7 @@ pub fn Shell(
                 <nav aria-label="Workspace">
                     <NavButton screen=screen target=Screen::DayBook label="Day Book" key="Alt+D"/>
                     <NavButton screen=screen target=Screen::Chart label="Chart of Accounts" key="Alt+A"/>
+                    <NavButton screen=screen target=Screen::Series label="Number Series" key="Alt+N"/>
                     <a class="nav-link" href="/">"Classic screens"</a>
                 </nav>
                 <div class="sidebar-footer">

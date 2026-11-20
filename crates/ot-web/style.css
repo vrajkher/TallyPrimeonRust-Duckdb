@@ -91,6 +91,11 @@ button.nav-link { width: 100%; border: 0; background: none; text-align: left; }
 .form-view.wide { width: min(640px, 100%); }
 .form-view p.muted { font-size: 14px; line-height: 1.45; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.series-form { display: grid; grid-template-columns: minmax(140px, 1.4fr) minmax(150px, 1.4fr) minmax(80px, .7fr) minmax(70px, .6fr) auto auto; align-items: end; gap: 12px; }
+.check { display: flex; align-items: center; gap: 8px; min-height: 40px; font-size: 13px; font-weight: 600; }
+.series-list .actions { display: flex; gap: 14px; justify-content: flex-end; }
+.series-list code { font: 13px ui-monospace, monospace; }
+.link-button.danger { color: var(--error); }
 .chart-tree tr.group td:first-child { font-weight: 700; }
 .chart-tree tr.ledger td:first-child { color: var(--muted); }
 
@@ -104,4 +109,6 @@ button.nav-link { width: 100%; border: 0; background: none; text-align: left; }
   .list-view th, .list-view td { padding: 9px 8px; }
   .list-view .secondary { display: none; }
   .field-row { grid-template-columns: 1fr; }
+  .series-form { grid-template-columns: 1fr 1fr; }
+  .series-form .button { grid-column: 1 / -1; }
 }

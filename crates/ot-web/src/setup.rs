@@ -120,7 +120,12 @@ pub fn SetupWizard(on_done: Callback<()>) -> impl IntoView {
                             charts
                                 .get()
                                 .into_iter()
-                                .map(|name| view! { <option value=name.clone()>{name.clone()}</option> })
+                                .map(|name| {
+                                    // Options may arrive after the suggestion, so mark it here too.
+                                    let key = name.clone();
+                                    let selected = move || chart.get() == key;
+                                    view! { <option value=name.clone() selected=selected>{name.clone()}</option> }
+                                })
                                 .collect_view()
                         }}
                     </select>

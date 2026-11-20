@@ -267,6 +267,7 @@ const JOURNAL: &str = "Books Journal Entry";
 const PAYMENT: &str = "Books Payment";
 const LEDGER: &str = "Books Ledger Entry";
 const SETTINGS: &str = "Books Accounting Settings";
+const SERIES: &str = "Books Number Series";
 
 fn rule(method: &Method, path: &str) -> Option<Rule> {
     let path = path.strip_prefix("/api/v1").map_or(path, |rest| rest);
@@ -303,6 +304,12 @@ fn rule(method: &Method, path: &str) -> Option<Rule> {
         // Each MCP tool is checked against its own route by the MCP server.
         (_, p) if p == "/mcp" || p.starts_with("/mcp/") => Rule::Signed,
         (_, "/users" | "/users/{id}") => Rule::Admin,
+        (true, "/series" | "/series/types") => Rule::Any(&[(SERIES, Perm::Read)]),
+        (false, "/series") => Rule::Any(&[(SERIES, Perm::Create)]),
+        (false, "/series/{prefix}") if *method == Method::DELETE => {
+            Rule::Any(&[(SERIES, Perm::Delete)])
+        }
+        (false, "/series/{prefix}") => Rule::Any(&[(SERIES, Perm::Write)]),
         (true, "/company/countries" | "/company/defaults") => Rule::Signed,
         (false, "/company/setup") => Rule::Admin,
         _ => return None,

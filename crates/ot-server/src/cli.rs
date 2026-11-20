@@ -69,6 +69,9 @@ pub enum Command {
     /// Chart of accounts templates.
     #[command(subcommand)]
     Chart(ChartCommand),
+    /// Number series that name documents, e.g. SINV-1001.
+    #[command(subcommand)]
+    Series(SeriesCommand),
     /// Copy the book to a backup file.
     Backup {
         /// Where to write the copy.
@@ -85,6 +88,52 @@ pub enum Command {
         #[arg(long)]
         yes: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SeriesCommand {
+    /// List the number series and the next name each will give.
+    List,
+    /// Add a number series. The first series of a document type becomes its default.
+    Add {
+        /// The prefix, e.g. GST-26-. It cannot contain / = ? & %.
+        prefix: String,
+        /// The document type: journal_entry, payment, sales_invoice, purchase_invoice,
+        /// sales_quote, purchase_receipt, shipment, stock_movement or pricing_rule.
+        #[arg(long = "type", value_name = "TYPE")]
+        reference_type: String,
+        /// The first number (default 1001).
+        #[arg(long)]
+        start: Option<u64>,
+        /// How many digits to pad the number to (default 4).
+        #[arg(long)]
+        pad: Option<u8>,
+        /// Make it the default series for its document type.
+        #[arg(long)]
+        default: bool,
+    },
+    /// Change a series' start, padding, or make it the default for its type.
+    Set {
+        prefix: String,
+        #[arg(long)]
+        start: Option<u64>,
+        #[arg(long)]
+        pad: Option<u8>,
+        #[arg(long)]
+        default: bool,
+    },
+    /// Delete a series that has not named any document and is not a default.
+    Delete { prefix: String },
+}
+
+fn series_text(row: &ot_store::series::SeriesRow) -> String {
+    format!(
+        "{:<18} {:<16} next {}{}",
+        row.prefix,
+        row.reference_label,
+        row.next_name,
+        if row.is_default { "  (default)" } else { "" }
+    )
 }
 
 #[derive(Debug, Subcommand)]
@@ -374,6 +423,58 @@ pub fn run(cli: &Cli, command: &Command, input: &mut dyn BufRead) -> Result<Outp
                     applied.ledgers_placed
                 ),
                 &applied,
+            ))
+        }
+        Command::Series(SeriesCommand::List) => {
+            let rows = open_existing(&path)?.number_series()?;
+            let text = rows.iter().map(series_text).collect::<Vec<_>>().join("\n");
+            Ok(Output::new(text, &rows))
+        }
+        Command::Series(SeriesCommand::Add {
+            prefix,
+            reference_type,
+            start,
+            pad,
+            default,
+        }) => {
+            let kind = ot_core::series::SeriesType::from_key(reference_type).ok_or_else(|| {
+                CliError::new(
+                    ExitCode::Invalid,
+                    format!(
+                        "Unknown document type {reference_type}; see `opentally series add --help`."
+                    ),
+                )
+            })?;
+            let row = open_existing(&path)?.add_number_series(ot_store::series::NewSeries {
+                prefix: prefix.clone(),
+                reference_type: kind,
+                start: *start,
+                pad_zeros: *pad,
+                make_default: *default,
+            })?;
+            Ok(Output::new(format!("Added {}", series_text(&row)), &row))
+        }
+        Command::Series(SeriesCommand::Set {
+            prefix,
+            start,
+            pad,
+            default,
+        }) => {
+            let row = open_existing(&path)?.update_number_series(
+                prefix,
+                ot_store::series::SeriesUpdate {
+                    start: *start,
+                    pad_zeros: *pad,
+                    make_default: default.then_some(true),
+                },
+            )?;
+            Ok(Output::new(format!("Updated {}", series_text(&row)), &row))
+        }
+        Command::Series(SeriesCommand::Delete { prefix }) => {
+            open_existing(&path)?.delete_number_series(prefix)?;
+            Ok(Output::new(
+                format!("Deleted number series {prefix}."),
+                json!({"deleted": prefix}),
             ))
         }
         Command::Token(token) => run_token(&path, token),
@@ -879,6 +980,40 @@ mod tests {
         .unwrap();
         assert!(applied.text.contains("28 groups"), "{}", applied.text);
         let unknown = exec(&dir, &["chart", "apply", "Atlantis"], "");
+        assert_eq!(unknown.unwrap_err().code, ExitCode::Invalid);
+    }
+
+    #[test]
+    fn number_series_are_managed_from_the_command_line() {
+        let dir = temp("series");
+        exec(&dir, &["migrate"], "").unwrap();
+        let list = exec(&dir, &["--json", "series", "list"], "").unwrap();
+        assert_eq!(list.value.as_array().unwrap().len(), 9);
+        let added = exec(
+            &dir,
+            &[
+                "series",
+                "add",
+                "GST-26-",
+                "--type",
+                "sales_invoice",
+                "--start",
+                "1",
+                "--pad",
+                "3",
+                "--default",
+            ],
+            "",
+        )
+        .unwrap();
+        assert!(added.text.contains("next GST-26-001"), "{}", added.text);
+        assert!(added.text.contains("(default)"), "{}", added.text);
+        let set = exec(&dir, &["series", "set", "GST-26-", "--start", "50"], "").unwrap();
+        assert!(set.text.contains("next GST-26-050"), "{}", set.text);
+        exec(&dir, &["series", "delete", "SINV-"], "").unwrap();
+        let missing = exec(&dir, &["series", "delete", "SINV-"], "");
+        assert_eq!(missing.unwrap_err().code, ExitCode::Missing);
+        let unknown = exec(&dir, &["series", "add", "X-", "--type", "invoice"], "");
         assert_eq!(unknown.unwrap_err().code, ExitCode::Invalid);
     }
 

@@ -3,7 +3,7 @@
 use gloo_net::http::{Request, Response};
 use ot_api_types::{
     ApiErrorBody, ChartOfAccounts, ChartTemplate, CompanySetup, CountryDefaults, DayBook,
-    DayBookFilter, SessionState, Setup, SignIn,
+    DayBookFilter, NewNumberSeries, NumberSeries, SeriesType, SessionState, Setup, SignIn,
 };
 use serde::de::DeserializeOwned;
 
@@ -126,19 +126,61 @@ async fn post<B: serde::Serialize, T: DeserializeOwned>(
     read(response).await
 }
 
+/// Percent-encodes a path segment or query value.
+fn encode(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+pub async fn number_series() -> Result<Vec<NumberSeries>, ApiError> {
+    get("/api/v1/series").await
+}
+
+pub async fn series_types() -> Result<Vec<SeriesType>, ApiError> {
+    get("/api/v1/series/types").await
+}
+
+pub async fn add_number_series(input: &NewNumberSeries) -> Result<NumberSeries, ApiError> {
+    post("/api/v1/series", input).await
+}
+
+pub async fn make_default_series(prefix: &str) -> Result<NumberSeries, ApiError> {
+    post(
+        &format!("/api/v1/series/{}", encode(prefix)),
+        &serde_json::json!({"make_default": true}),
+    )
+    .await
+}
+
+pub async fn delete_number_series(prefix: &str) -> Result<(), ApiError> {
+    let response = Request::delete(&format!("/api/v1/series/{}", encode(prefix)))
+        .header("x-csrf-token", &csrf_token())
+        .send()
+        .await
+        .map_err(|_| ApiError::network())?;
+    if response.ok() {
+        return Ok(());
+    }
+    read::<serde_json::Value>(response).await.map(|_| ())
+}
+
 pub async fn countries() -> Result<Vec<String>, ApiError> {
     get("/api/v1/company/countries").await
 }
 
 pub async fn country_defaults(country: &str) -> Result<CountryDefaults, ApiError> {
-    let query: String = country
-        .bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' => (b as char).to_string(),
-            _ => format!("%{b:02X}"),
-        })
-        .collect();
-    get(&format!("/api/v1/company/defaults?country={query}")).await
+    get(&format!(
+        "/api/v1/company/defaults?country={}",
+        encode(country)
+    ))
+    .await
 }
 
 pub async fn chart_templates() -> Result<Vec<ChartTemplate>, ApiError> {

@@ -83,6 +83,10 @@ impl App {
         self.send(LOCAL, Method::POST, uri, headers, Some(body))
             .await
     }
+
+    async fn delete(&self, uri: &str, headers: &[(&str, &str)]) -> Reply {
+        self.send(LOCAL, Method::DELETE, uri, headers, None).await
+    }
 }
 
 /// A signed-in browser: its cookie header and CSRF token.
@@ -883,4 +887,97 @@ async fn company_setup_wizard_runs_once_for_a_system_manager() {
     assert_eq!(templates.len(), 14);
     let book = app.get("/api/v1/settings", &mira.read()).await;
     assert_eq!(book.body["company_name"], "Shree Traders");
+}
+
+#[tokio::test]
+async fn number_series_follow_frappe_roles() {
+    let app = App::new();
+    let asha = set_up_admin(&app).await;
+    let types = app.get("/api/v1/series/types", &asha.read()).await;
+    assert_eq!(types.body.as_array().unwrap().len(), 9);
+    assert_eq!(types.body[0]["key"], "journal_entry");
+
+    let list: Vec<ot_api_types::NumberSeries> =
+        serde_json::from_value(app.get("/api/v1/series", &asha.read()).await.body).unwrap();
+    let sinv = list.iter().find(|s| s.prefix == "SINV-").unwrap();
+    assert!(sinv.is_default);
+    assert_eq!(sinv.next_name, "SINV-1001");
+    assert_eq!(sinv.reference_label, "Sales Invoice");
+
+    let added = app
+        .post(
+            "/api/v1/series",
+            &asha.write(),
+            json!({"prefix": "GST 26-", "reference_type": "sales_invoice", "start": 1, "pad_zeros": 3}),
+        )
+        .await;
+    assert_eq!(added.status, StatusCode::CREATED, "{}", added.body);
+    assert_eq!(added.body["next_name"], "GST 26-001");
+    let again = app
+        .post(
+            "/api/v1/series",
+            &asha.write(),
+            json!({"prefix": "GST 26-", "reference_type": "sales_invoice"}),
+        )
+        .await;
+    assert_eq!(again.status, StatusCode::CONFLICT);
+    let bad = app
+        .post(
+            "/api/v1/series",
+            &asha.write(),
+            json!({"prefix": "A?B", "reference_type": "payment"}),
+        )
+        .await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+
+    // The prefix travels percent-encoded in the path.
+    let default = app
+        .post(
+            "/api/v1/series/GST%2026-",
+            &asha.write(),
+            json!({"make_default": true}),
+        )
+        .await;
+    assert_eq!(default.status, StatusCode::OK, "{}", default.body);
+    assert_eq!(default.body["is_default"], true);
+    let in_use = app.delete("/api/v1/series/GST%2026-", &asha.write()).await;
+    assert_eq!(in_use.status, StatusCode::BAD_REQUEST, "a default stays");
+    let old = app.delete("/api/v1/series/SINV-", &asha.write()).await;
+    assert_eq!(old.status, StatusCode::NO_CONTENT);
+    let gone = app.delete("/api/v1/series/SINV-", &asha.write()).await;
+    assert_eq!(gone.status, StatusCode::NOT_FOUND);
+
+    // Books Users read number series but cannot change them.
+    app.post(
+        "/api/v1/users",
+        &asha.write(),
+        json!({"username": "ravi", "full_name": "Ravi", "password": "another long secret", "roles": ["books_user"]}),
+    )
+    .await;
+    let ravi = Browser::from(
+        &app.post(
+            "/api/v1/session",
+            &[],
+            json!({"username": "ravi", "password": "another long secret"}),
+        )
+        .await,
+    );
+    assert_eq!(
+        app.get("/api/v1/series", &ravi.read()).await.status,
+        StatusCode::OK
+    );
+    let refused = app
+        .post(
+            "/api/v1/series",
+            &ravi.write(),
+            json!({"prefix": "R-", "reference_type": "payment"}),
+        )
+        .await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        app.delete("/api/v1/series/PAY-", &ravi.write())
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
 }

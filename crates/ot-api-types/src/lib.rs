@@ -107,6 +107,41 @@ pub struct ChartOfAccounts {
     pub unclassified_ledgers: usize,
 }
 
+/// A number series from `GET /api/v1/series`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NumberSeries {
+    pub prefix: String,
+    /// The document type's key, e.g. `sales_invoice`.
+    pub reference_type: String,
+    pub reference_label: String,
+    pub start: u64,
+    pub pad_zeros: u8,
+    pub current: u64,
+    pub is_default: bool,
+    pub next_name: String,
+    pub used: bool,
+}
+
+/// A document type from `GET /api/v1/series/types`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeriesType {
+    pub key: String,
+    pub label: String,
+    pub standard_prefix: String,
+}
+
+/// `POST /api/v1/series`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewNumberSeries {
+    pub prefix: String,
+    pub reference_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pad_zeros: Option<u8>,
+    pub make_default: bool,
+}
+
 /// `POST /api/v1/session`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignIn {

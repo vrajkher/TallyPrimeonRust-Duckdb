@@ -9,6 +9,7 @@ pub mod chart;
 pub mod imports;
 pub mod migrate;
 pub mod reports;
+pub mod series;
 mod store;
 
 pub use store::*;

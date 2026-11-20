@@ -17,6 +17,8 @@ pub enum Action {
     Purchase,
     /// Alt+D
     DayBook,
+    /// Alt+A: the chart of accounts.
+    Accounts,
     /// `/`: focus the list search.
     Search,
     /// Ctrl+A: accept (save) the open form, as in Tally.
@@ -57,6 +59,7 @@ pub fn action(key: &str, mods: Modifiers, typing: bool) -> Option<Action> {
         "/" if plain && !typing => Some(Action::Search),
         "a" | "A" if (mods.ctrl || mods.meta) && !mods.alt && !mods.shift => Some(Action::Save),
         "d" | "D" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::DayBook),
+        "a" | "A" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Accounts),
         "c" | "C" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Create),
         _ => None,
     }
@@ -107,6 +110,7 @@ mod tests {
         let alt = Modifiers { alt: true, ..NONE };
         assert_eq!(action("a", ctrl, true), Some(Action::Save));
         assert_eq!(action("d", alt, false), Some(Action::DayBook));
+        assert_eq!(action("a", alt, true), Some(Action::Accounts));
         assert_eq!(action("C", alt, true), Some(Action::Create));
         assert_eq!(action("Escape", NONE, true), Some(Action::Back));
         assert_eq!(action("a", NONE, false), None);

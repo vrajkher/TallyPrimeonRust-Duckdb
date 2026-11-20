@@ -27,7 +27,9 @@ The first build compiles the bundled DuckDB library. When the app is running, op
 
 ### The new interface
 
-OpenTally is moving to a new interface written in Rust with [Leptos](https://leptos.dev) and compiled to WebAssembly. It runs at [http://127.0.0.1:3000/app/](http://127.0.0.1:3000/app/) next to the classic screens, and screens move to it one at a time. It already has sign-in, creating the first user, and the Day Book with date, type and text filters.
+OpenTally is moving to a new interface written in Rust with [Leptos](https://leptos.dev) and compiled to WebAssembly. It runs at [http://127.0.0.1:3000/app/](http://127.0.0.1:3000/app/) next to the classic screens, and screens move to it one at a time. It already has sign-in, creating the first user, the company setup wizard, the Day Book with date, type and text filters, and the Chart of Accounts.
+
+The first time a System Manager opens it, the setup wizard asks for the company name, country, currency, chart of accounts, fiscal year and bank. Choosing a country fills in its currency, chart and fiscal year: India gets Tally's reserved groups and an April–March year. The wizard runs once.
 
 Build it once, and again after changing it:
 
@@ -44,6 +46,7 @@ Then start OpenTally from the repository root as usual. Set `OPENTALLY_UI_DIR` t
 | --- | --- |
 | F4, F5, F6, F7 | Contra, Payment, Receipt or Journal entry (on the classic screens for now) |
 | Alt+D | Day Book |
+| Alt+A | Chart of Accounts |
 | / | Search the list |
 | Page Up, Page Down | Previous or next page |
 | Esc | Close a message |

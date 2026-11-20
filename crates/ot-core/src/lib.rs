@@ -10,5 +10,6 @@ pub mod ledger;
 pub mod money;
 mod permissions_table;
 pub mod series;
+pub mod setup;
 
 pub use rust_decimal::Decimal;

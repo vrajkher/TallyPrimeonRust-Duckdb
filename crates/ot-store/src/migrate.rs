@@ -41,6 +41,13 @@ pub const MIGRATIONS: &[Migration] = &[
             "../migrations/duckdb/0003_chart/1_accounts.sql"
         )],
     },
+    Migration {
+        version: 4,
+        name: "fiscal_year",
+        parts: &[include_str!(
+            "../migrations/duckdb/0004_fiscal_year/1_settings.sql"
+        )],
+    },
 ];
 
 /// Migrations from this version on must use SQL that PostgreSQL also accepts, so a
@@ -290,7 +297,7 @@ mod tests {
     #[test]
     fn fresh_book_applies_all_then_nothing() {
         let mut connection = Connection::open_in_memory().unwrap();
-        assert_eq!(migrate(&mut connection).unwrap(), vec![1, 2, 3]);
+        assert_eq!(migrate(&mut connection).unwrap(), vec![1, 2, 3, 4]);
         assert!(migrate(&mut connection).unwrap().is_empty());
         let (name, checksum): (String, String) = connection
             .query_row(
@@ -367,7 +374,7 @@ mod tests {
         let mut connection = Connection::open(&path).unwrap();
         migrate(&mut connection).unwrap();
         drop(connection);
-        assert_eq!(file_version(&path).unwrap(), 3);
+        assert_eq!(file_version(&path).unwrap(), 4);
         assert_eq!(backup_before_migrating(&path).unwrap(), None);
     }
 }

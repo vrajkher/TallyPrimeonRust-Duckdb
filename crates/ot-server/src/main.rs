@@ -394,6 +394,34 @@ async fn update_accounting_settings(
         .map_err(ApiError)
 }
 
+async fn company_countries() -> Json<Vec<String>> {
+    Json(ot_core::setup::countries())
+}
+
+#[derive(serde::Deserialize)]
+struct CountryQuery {
+    country: String,
+}
+
+async fn company_defaults(
+    Query(query): Query<CountryQuery>,
+) -> ApiResult<Json<ot_core::setup::CountryDefaults>> {
+    ot_core::setup::country_defaults(query.country.trim(), ot_core::setup::today_utc())
+        .map(Json)
+        .map_err(|e| ApiError(StoreError::Invalid(e.to_string())))
+}
+
+async fn company_setup(
+    State(db): State<Database>,
+    Json(input): Json<ot_store::chart::CompanySetup>,
+) -> ApiResult<Json<ot_store::chart::SetupResult>> {
+    let today = ot_core::setup::today_utc();
+    db.write(move |store| store.setup_company(input, today))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
 /// The book's API routes, served at both `/api` and `/api/v1`.
 fn book_routes() -> Router<AppState> {
     Router::new()
@@ -427,6 +455,9 @@ fn book_routes() -> Router<AppState> {
             "/settings/accounting",
             get(accounting_settings).post(update_accounting_settings),
         )
+        .route("/company/countries", get(company_countries))
+        .route("/company/defaults", get(company_defaults))
+        .route("/company/setup", post(company_setup))
         .route("/session/password", post(auth::change_password))
         .route("/users", get(auth::list_users).post(auth::add_user))
         .route("/users/{id}", post(auth::change_user))

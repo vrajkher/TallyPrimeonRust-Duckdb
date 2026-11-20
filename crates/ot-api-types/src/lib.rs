@@ -34,6 +34,77 @@ pub struct SessionState {
     /// No users exist yet; create the first with `POST /api/v1/setup`.
     pub setup_required: bool,
     pub csrf_token: Option<String>,
+    /// The company setup wizard has run.
+    #[serde(default)]
+    pub company_setup_complete: bool,
+}
+
+/// `GET /api/v1/company/defaults?country=…`: what the wizard suggests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CountryDefaults {
+    pub country: String,
+    pub currency: Option<String>,
+    pub chart: String,
+    pub fiscal_year_start: String,
+    pub fiscal_year_end: String,
+}
+
+/// One chart template from `GET /api/v1/accounts/charts`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChartTemplate {
+    pub name: String,
+    pub country_code: String,
+}
+
+/// `POST /api/v1/company/setup`. Empty optional fields take the country's suggestions.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompanySetup {
+    pub company_name: String,
+    pub country: String,
+    pub bank_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chart: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fiscal_year_start: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fiscal_year_end: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gstin: Option<String>,
+}
+
+/// A group of `GET /api/v1/accounts`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupAccount {
+    pub id: i64,
+    pub name: String,
+    pub parent_id: Option<i64>,
+    pub root_type: Option<String>,
+    /// `set`, `inherited` or `tally_name`.
+    pub root_source: Option<String>,
+    pub account_type: Option<String>,
+}
+
+/// A ledger of `GET /api/v1/accounts`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LedgerAccount {
+    pub id: i64,
+    pub name: String,
+    pub kind: String,
+    pub group_id: Option<i64>,
+    pub root_type: Option<String>,
+    pub account_type: Option<String>,
+    pub effective_type: Option<String>,
+    pub gst_head: Option<String>,
+}
+
+/// `GET /api/v1/accounts`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChartOfAccounts {
+    pub groups: Vec<GroupAccount>,
+    pub ledgers: Vec<LedgerAccount>,
+    pub unclassified_ledgers: usize,
 }
 
 /// `POST /api/v1/session`.

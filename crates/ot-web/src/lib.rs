@@ -3,18 +3,22 @@
 //! It runs at `/app/` and talks only to the `/api/v1` API. Screens move here from the
 //! classic interface one at a time; the Day Book is the first.
 
+mod accounts;
 mod api;
 mod day_book;
 pub mod keys;
+mod setup;
 mod views;
 
 use leptos::{prelude::*, task::spawn_local};
 use ot_api_types::{Setup, SignIn, User};
 
 use crate::{
+    accounts::ChartView,
     day_book::DayBookView,
     keys::{Action, Modifiers},
-    views::{FieldSpec, FormView, Shell},
+    setup::SetupWizard,
+    views::{FieldSpec, FormView, Screen, Shell},
 };
 
 /// The latest keyboard command, with a counter so the same key can fire twice.
@@ -26,7 +30,8 @@ enum Phase {
     Loading,
     Setup,
     SignIn,
-    Ready(Option<User>),
+    /// Signed in (or a book without users); the flag says whether the company is set up.
+    Ready(Option<User>, bool),
     Failed(String),
 }
 
@@ -39,7 +44,7 @@ pub fn start() {
 fn check_session(phase: RwSignal<Phase>) {
     spawn_local(async move {
         let next = match api::session().await {
-            Ok(state) if state.signed_in => Phase::Ready(state.user),
+            Ok(state) if state.signed_in => Phase::Ready(state.user, state.company_setup_complete),
             Ok(state) if state.setup_required => Phase::Setup,
             Ok(_) => Phase::SignIn,
             Err(error) => Phase::Failed(error.message),
@@ -65,12 +70,13 @@ fn App() -> impl IntoView {
     let phase = RwSignal::new(Phase::Loading);
     let command = Command(RwSignal::new(None));
     let notice = RwSignal::new(None::<String>);
+    let screen = RwSignal::new(Screen::DayBook);
     provide_context(command);
     check_session(phase);
 
     let counter = StoredValue::new(0_u64);
     let handle = window_event_listener(leptos::ev::keydown, move |event| {
-        if !matches!(phase.get_untracked(), Phase::Ready(_)) {
+        if !matches!(phase.get_untracked(), Phase::Ready(..)) {
             return;
         }
         let mods = Modifiers {
@@ -98,6 +104,8 @@ fn App() -> impl IntoView {
                 "There is nothing to save or create on this screen.".into(),
             )),
             Action::Back => notice.set(None),
+            Action::DayBook => screen.set(Screen::DayBook),
+            Action::Accounts => screen.set(Screen::Chart),
             _ => {}
         }
         counter.update_value(|n| *n += 1);
@@ -113,7 +121,8 @@ fn App() -> impl IntoView {
         });
     });
 
-    move || match phase.get() {
+    move || {
+        match phase.get() {
         Phase::Loading => view! { <p class="centered muted">"Opening OpenTally…"</p> }.into_any(),
         Phase::Failed(message) => view! {
             <div class="centered card">
@@ -124,13 +133,34 @@ fn App() -> impl IntoView {
         .into_any(),
         Phase::SignIn => view! { <SignInForm phase=phase/> }.into_any(),
         Phase::Setup => view! { <SetupForm phase=phase/> }.into_any(),
-        Phase::Ready(user) => view! {
-            <Shell user=user notice=notice on_sign_out=on_sign_out>
-                <DayBookView on_signed_out=on_signed_out/>
+        Phase::Ready(user, false) if is_admin(user.as_ref()) => {
+            let on_done = Callback::new(move |_| {
+                screen.set(Screen::Chart);
+                phase.set(Phase::Ready(user.clone(), true));
+            });
+            view! { <SetupWizard on_done=on_done/> }.into_any()
+        }
+        Phase::Ready(user, company_ready) => view! {
+            <Shell user=user screen=screen notice=notice on_sign_out=on_sign_out>
+                <Show when=move || !company_ready>
+                    <p class="status notice" role="status">
+                        "A System Manager still needs to finish setting up the company."
+                    </p>
+                </Show>
+                {move || match screen.get() {
+                    Screen::DayBook => view! { <DayBookView on_signed_out=on_signed_out/> }.into_any(),
+                    Screen::Chart => view! { <ChartView on_signed_out=on_signed_out/> }.into_any(),
+                }}
             </Shell>
         }
         .into_any(),
     }
+    }
+}
+
+/// A System Manager, or anyone in a book without users, may run the setup wizard.
+fn is_admin(user: Option<&User>) -> bool {
+    user.is_none_or(|user| user.roles.iter().any(|role| role == "system_manager"))
 }
 
 /// Whether focus is in a field that takes text.
@@ -157,7 +187,7 @@ fn SignInForm(phase: RwSignal<Phase>) -> impl IntoView {
         busy.set(true);
         spawn_local(async move {
             match api::sign_in(&input).await {
-                Ok(state) => phase.set(Phase::Ready(state.user)),
+                Ok(state) => phase.set(Phase::Ready(state.user, state.company_setup_complete)),
                 Err(failure) => error.set(Some(failure.message)),
             }
             busy.set(false);
@@ -194,7 +224,7 @@ fn SetupForm(phase: RwSignal<Phase>) -> impl IntoView {
         busy.set(true);
         spawn_local(async move {
             match api::setup(&input).await {
-                Ok(state) => phase.set(Phase::Ready(state.user)),
+                Ok(state) => phase.set(Phase::Ready(state.user, state.company_setup_complete)),
                 Err(failure) => error.set(Some(failure.message)),
             }
             busy.set(false);
@@ -215,7 +245,13 @@ fn SetupForm(phase: RwSignal<Phase>) -> impl IntoView {
                 busy=busy
                 on_submit=submit
             >
-                <button class="link-button" type="button" on:click=move |_| phase.set(Phase::Ready(None))>
+                <button class="link-button" type="button" on:click=move |_| {
+                    // The session reply says whether the company is set up yet.
+                    spawn_local(async move {
+                        let ready = api::session().await.is_ok_and(|s| s.company_setup_complete);
+                        phase.set(Phase::Ready(None, ready));
+                    });
+                }>
                     "Continue without users on this computer"
                 </button>
             </FormView>

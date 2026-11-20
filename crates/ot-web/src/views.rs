@@ -159,10 +159,18 @@ where
     }
 }
 
+/// The screens of the workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    DayBook,
+    Chart,
+}
+
 /// The signed-in workspace: sidebar, top bar and content.
 #[component]
 pub fn Shell(
     user: Option<User>,
+    screen: RwSignal<Screen>,
     #[prop(into)] notice: Signal<Option<String>>,
     on_sign_out: Callback<()>,
     children: Children,
@@ -180,9 +188,8 @@ pub fn Shell(
                     <span>"OpenTally"</span>
                 </a>
                 <nav aria-label="Workspace">
-                    <a class="nav-link active" href="/app/" aria-current="page">
-                        "Day Book" <kbd>"Alt+D"</kbd>
-                    </a>
+                    <NavButton screen=screen target=Screen::DayBook label="Day Book" key="Alt+D"/>
+                    <NavButton screen=screen target=Screen::Chart label="Chart of Accounts" key="Alt+A"/>
                     <a class="nav-link" href="/">"Classic screens"</a>
                 </nav>
                 <div class="sidebar-footer">
@@ -202,5 +209,25 @@ pub fn Shell(
                 {children()}
             </main>
         </div>
+    }
+}
+
+#[component]
+fn NavButton(
+    screen: RwSignal<Screen>,
+    target: Screen,
+    label: &'static str,
+    key: &'static str,
+) -> impl IntoView {
+    let active = move || screen.get() == target;
+    view! {
+        <button
+            type="button"
+            class=move || if active() { "nav-link active" } else { "nav-link" }
+            aria-current=move || active().then_some("page")
+            on:click=move |_| screen.set(target)
+        >
+            {label} <kbd>{key}</kbd>
+        </button>
     }
 }

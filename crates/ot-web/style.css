@@ -52,6 +52,7 @@ h1, p { margin: 0; }
 .brand-mark i:nth-child(3) { height: 12px; }
 .sidebar nav { display: grid; gap: 4px; }
 .nav-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 10px; color: #d8e7dd; font-size: 14px; font-weight: 600; text-decoration: none; }
+button.nav-link { width: 100%; border: 0; background: none; text-align: left; }
 .nav-link:hover, .nav-link.active { background: #275346; color: #fff; }
 .nav-link kbd { font: 11px ui-monospace, monospace; color: #a9c7b4; }
 .sidebar-footer { display: grid; gap: 8px; margin-top: auto; padding: 0 12px; color: #bfd6c6; font-size: 12px; }
@@ -87,6 +88,11 @@ h1, p { margin: 0; }
 .centered { display: grid; place-items: center; min-height: 100vh; padding: 16px; }
 .form-view { display: grid; gap: 14px; width: min(420px, 100%); }
 .form-view h1 { font-size: 24px; letter-spacing: -.02em; }
+.form-view.wide { width: min(640px, 100%); }
+.form-view p.muted { font-size: 14px; line-height: 1.45; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.chart-tree tr.group td:first-child { font-weight: 700; }
+.chart-tree tr.ledger td:first-child { color: var(--muted); }
 
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; }
@@ -97,4 +103,5 @@ h1, p { margin: 0; }
   .list-view { min-width: 0; font-size: 12px; }
   .list-view th, .list-view td { padding: 9px 8px; }
   .list-view .secondary { display: none; }
+  .field-row { grid-template-columns: 1fr; }
 }

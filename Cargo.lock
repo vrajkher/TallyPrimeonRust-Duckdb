@@ -2087,6 +2087,7 @@ dependencies = [
 name = "ot-core"
 version = "0.2.0"
 dependencies = [
+ "chrono",
  "rust_decimal",
  "serde",
  "serde_json",

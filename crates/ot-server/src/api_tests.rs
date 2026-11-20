@@ -807,3 +807,80 @@ async fn chart_of_accounts_and_settings_follow_frappe_roles() {
     assert_eq!(saved.body["fiscal_year_start"], "2025-04-01");
     assert!(saved.body["round_off_ledger_id"].is_i64());
 }
+
+#[tokio::test]
+async fn company_setup_wizard_runs_once_for_a_system_manager() {
+    let app = App::new();
+    let asha = set_up_admin(&app).await;
+    let state: ot_api_types::SessionState =
+        serde_json::from_value(app.get("/api/v1/session", &asha.read()).await.body).unwrap();
+    assert!(!state.company_setup_complete);
+    let countries = app.get("/api/v1/company/countries", &asha.read()).await;
+    assert!(
+        countries
+            .body
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "India")
+    );
+    let defaults: ot_api_types::CountryDefaults = serde_json::from_value(
+        app.get("/api/v1/company/defaults?country=India", &asha.read())
+            .await
+            .body,
+    )
+    .unwrap();
+    assert_eq!(defaults.currency.as_deref(), Some("INR"));
+    assert!(defaults.fiscal_year_start.ends_with("-04-01"));
+
+    app.post(
+        "/api/v1/users",
+        &asha.write(),
+        json!({"username": "mira", "full_name": "Mira", "password": "another long secret", "roles": ["books_manager"]}),
+    )
+    .await;
+    let mira = Browser::from(
+        &app.post(
+            "/api/v1/session",
+            &[],
+            json!({"username": "mira", "password": "another long secret"}),
+        )
+        .await,
+    );
+    let setup =
+        json!({"company_name": "Shree Traders", "country": "India", "bank_name": "HDFC Bank"});
+    let denied = app
+        .post("/api/v1/company/setup", &mira.write(), setup.clone())
+        .await;
+    assert_eq!(denied.status, StatusCode::FORBIDDEN);
+
+    let done = app
+        .post("/api/v1/company/setup", &asha.write(), setup.clone())
+        .await;
+    assert_eq!(done.status, StatusCode::OK, "{}", done.body);
+    assert_eq!(done.body["settings"]["setup_complete"], true);
+    let state: ot_api_types::SessionState =
+        serde_json::from_value(app.get("/api/v1/session", &asha.read()).await.body).unwrap();
+    assert!(state.company_setup_complete);
+    let again = app
+        .post("/api/v1/company/setup", &asha.write(), setup)
+        .await;
+    assert_eq!(again.status, StatusCode::CONFLICT);
+
+    let chart: ot_api_types::ChartOfAccounts =
+        serde_json::from_value(app.get("/api/v1/accounts", &mira.read()).await.body).unwrap();
+    assert_eq!(chart.unclassified_ledgers, 0);
+    let bank = chart
+        .ledgers
+        .iter()
+        .find(|l| l.name == "HDFC Bank")
+        .unwrap();
+    assert_eq!(bank.effective_type.as_deref(), Some("Bank"));
+    assert_eq!(bank.root_type.as_deref(), Some("Asset"));
+    let templates: Vec<ot_api_types::ChartTemplate> =
+        serde_json::from_value(app.get("/api/v1/accounts/charts", &mira.read()).await.body)
+            .unwrap();
+    assert_eq!(templates.len(), 14);
+    let book = app.get("/api/v1/settings", &mira.read()).await;
+    assert_eq!(book.body["company_name"], "Shree Traders");
+}

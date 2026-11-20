@@ -303,6 +303,8 @@ fn rule(method: &Method, path: &str) -> Option<Rule> {
         // Each MCP tool is checked against its own route by the MCP server.
         (_, p) if p == "/mcp" || p.starts_with("/mcp/") => Rule::Signed,
         (_, "/users" | "/users/{id}") => Rule::Admin,
+        (true, "/company/countries" | "/company/defaults") => Rule::Signed,
+        (false, "/company/setup") => Rule::Admin,
         _ => return None,
     })
 }
@@ -359,6 +361,8 @@ pub struct SessionState {
     /// No users exist yet; the first one is created with `POST /api/v1/setup`.
     setup_required: bool,
     csrf_token: Option<String>,
+    /// The company setup wizard has run (`POST /api/v1/company/setup`).
+    company_setup_complete: bool,
 }
 
 pub async fn session_state(
@@ -366,6 +370,11 @@ pub async fn session_state(
     headers: HeaderMap,
 ) -> Result<Json<SessionState>, AuthError> {
     let users = state.db.read(|store| store.user_count()).await?;
+    let company_setup_complete = state
+        .db
+        .read(|store| store.accounting_settings())
+        .await?
+        .setup_complete;
     let session = match cookie(&headers, SESSION_COOKIE) {
         Some(secret) => {
             let hash = token_hash(secret);
@@ -378,6 +387,7 @@ pub async fn session_state(
         csrf_token: session.as_ref().map(|s| s.csrf_token.clone()),
         user: session.map(|s| s.user),
         setup_required: users == 0,
+        company_setup_complete,
     }))
 }
 
@@ -446,11 +456,17 @@ async fn start_session(state: &AppState, user: UserInfo) -> Result<Response, Aut
         })
         .await?;
     let secure = if state.secure_cookies { "; Secure" } else { "" };
+    let company_setup_complete = state
+        .db
+        .read(|store| store.accounting_settings())
+        .await?
+        .setup_complete;
     let mut response = Json(SessionState {
         signed_in: true,
         user: Some(user),
         setup_required: false,
         csrf_token: Some(csrf.clone()),
+        company_setup_complete,
     })
     .into_response();
     let headers = response.headers_mut();

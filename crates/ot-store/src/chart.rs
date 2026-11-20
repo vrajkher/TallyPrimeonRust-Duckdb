@@ -77,8 +77,10 @@ pub struct AccountingSettings {
     pub country: Option<String>,
     pub currency: String,
     pub fiscal_year_start: Option<String>,
+    pub fiscal_year_end: Option<String>,
     pub chart: Option<String>,
     pub gstin: Option<String>,
+    pub bank_ledger_id: Option<i64>,
     pub round_off_ledger_id: Option<i64>,
     pub write_off_ledger_id: Option<i64>,
     pub discount_ledger_id: Option<i64>,
@@ -119,6 +121,27 @@ where
     T: Deserialize<'de>,
 {
     Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// What the setup wizard sends. Absent fields take the country's suggestions.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompanySetup {
+    pub company_name: String,
+    pub country: String,
+    pub bank_name: String,
+    pub currency: Option<String>,
+    pub chart: Option<String>,
+    pub fiscal_year_start: Option<String>,
+    pub fiscal_year_end: Option<String>,
+    pub gstin: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SetupResult {
+    pub company_name: String,
+    pub chart: ChartApplied,
+    pub settings: AccountingSettings,
 }
 
 #[derive(Debug, Deserialize)]
@@ -295,7 +318,8 @@ fn settings_of(connection: &duckdb::Connection) -> Result<AccountingSettings, St
     Ok(connection.query_row(
         "SELECT country, currency, CAST(fiscal_year_start AS VARCHAR), chart, gstin,
                 round_off_ledger_id, write_off_ledger_id, discount_ledger_id,
-                receivable_ledger_id, payable_ledger_id, setup_complete
+                receivable_ledger_id, payable_ledger_id, setup_complete,
+                CAST(fiscal_year_end AS VARCHAR), bank_ledger_id
          FROM accounting_settings WHERE id = 1",
         [],
         |row| {
@@ -311,6 +335,8 @@ fn settings_of(connection: &duckdb::Connection) -> Result<AccountingSettings, St
                 receivable_ledger_id: row.get(8)?,
                 payable_ledger_id: row.get(9)?,
                 setup_complete: row.get(10)?,
+                fiscal_year_end: row.get(11)?,
+                bank_ledger_id: row.get(12)?,
             })
         },
     )?)
@@ -350,101 +376,87 @@ impl Store {
     /// ledgers with the same names are kept and classified; ungrouped ledgers are
     /// placed in the chart's group. Settings defaults that are still empty are filled.
     pub fn apply_chart(&mut self, chart: &str) -> Result<ChartApplied, StoreError> {
-        let accounts = load_chart(chart).map_err(invalid)?;
         let tx = self.connection.transaction()?;
-        let (mut groups_created, mut ledgers_created, mut ledgers_placed) = (0, 0, 0);
-        let mut group_ids: HashMap<String, i64> = HashMap::new();
+        let applied = apply_chart_in(&tx, chart)?;
+        tx.commit()?;
+        Ok(applied)
+    }
 
-        for account in &accounts {
-            let parent_id = account
-                .parent
-                .as_ref()
-                .and_then(|p| group_ids.get(p).copied());
-            if account.is_group {
-                let id = match find_group(&tx, &account.name)? {
-                    Some(id) => id,
-                    None => {
-                        groups_created += 1;
-                        tx.query_row(
-                            "INSERT INTO account_groups (name, name_key, parent_id) VALUES (?, ?, ?) RETURNING id",
-                            params![account.name, account.name.to_lowercase(), parent_id],
-                            |row| row.get(0),
-                        )?
-                    }
-                };
-                // Classify the group unless someone already did.
-                tx.execute(
-                    "INSERT INTO group_accounts (group_id, root_type, account_type) VALUES (?, ?, ?)
-                     ON CONFLICT (group_id) DO NOTHING",
-                    params![id, account.root_type.label(), account.account_type.map(AccountType::label)],
-                )?;
-                group_ids.insert(account.name.clone(), id);
-                continue;
-            }
-            let Some(group_id) = parent_id else { continue };
-            let ledger_id = match find_ledger(&tx, &account.name)? {
-                Some((id, existing_group)) => {
-                    if existing_group.is_none() {
-                        tx.execute(
-                            "INSERT INTO ledger_groups VALUES (?, ?)",
-                            params![id, group_id],
-                        )?;
-                        ledgers_placed += 1;
-                    }
-                    id
-                }
-                None => {
-                    ledgers_created += 1;
-                    let kind = match account.account_type {
-                        Some(AccountType::Cash) => "cash",
-                        Some(AccountType::Bank) => "bank",
-                        _ => "general",
-                    };
-                    let id: i64 = tx.query_row(
-                        "INSERT INTO ledgers (name, name_key, kind) VALUES (?, ?, ?) RETURNING id",
-                        params![account.name, account.name.to_lowercase(), kind],
-                        |row| row.get(0),
-                    )?;
-                    tx.execute(
-                        "INSERT INTO ledger_groups VALUES (?, ?)",
-                        params![id, group_id],
-                    )?;
-                    id
-                }
-            };
-            if let Some(kind) = account.account_type {
-                tx.execute(
-                    "INSERT INTO ledger_accounts (ledger_id, account_type) VALUES (?, ?)
-                     ON CONFLICT (ledger_id) DO NOTHING",
-                    params![ledger_id, kind.label()],
-                )?;
-            }
+    /// Sets up the company once, as Frappe Books' setup wizard does: names it, applies
+    /// the chart, adds the company's bank ledger and a Discounts ledger, records the
+    /// country, currency, fiscal year and GSTIN, fills the default accounts and marks
+    /// setup complete. Fields left out take the country's suggestions.
+    pub fn setup_company(
+        &mut self,
+        request: CompanySetup,
+        today: chrono::NaiveDate,
+    ) -> Result<SetupResult, StoreError> {
+        use ot_core::setup::{country_defaults, parse_date, validate_fiscal_year};
+        if settings_of(&self.connection)?.setup_complete {
+            return Err(StoreError::Conflict(
+                "The company is already set up.".into(),
+            ));
+        }
+        let company = required_text(&request.company_name, "Company name", 150)?.to_owned();
+        let bank_name = required_text(&request.bank_name, "Bank name", 100)?.to_owned();
+        let defaults = country_defaults(request.country.trim(), today).map_err(invalid)?;
+        let currency = Currency::new(
+            request
+                .currency
+                .as_deref()
+                .or(defaults.currency.as_deref())
+                .unwrap_or("INR"),
+        )
+        .map_err(invalid)?
+        .code()
+        .to_owned();
+        let chart = request.chart.clone().unwrap_or(defaults.chart.clone());
+        let start = parse_date(
+            request
+                .fiscal_year_start
+                .as_deref()
+                .unwrap_or(&defaults.fiscal_year_start),
+        )
+        .map_err(invalid)?;
+        let end = match request.fiscal_year_end.as_deref() {
+            Some(text) => parse_date(text).map_err(invalid)?,
+            None if request.fiscal_year_start.is_some() => ot_core::setup::fiscal_year_end(start),
+            None => parse_date(&defaults.fiscal_year_end).map_err(invalid)?,
+        };
+        validate_fiscal_year(start, end).map_err(invalid)?;
+        let gstin = request
+            .gstin
+            .as_deref()
+            .map(|g| g.trim().to_uppercase())
+            .filter(|g| !g.is_empty());
+        if let Some(g) = &gstin
+            && (g.len() != 15 || !g.chars().all(|c| c.is_ascii_alphanumeric()))
+        {
+            return Err(StoreError::Invalid(
+                "A GSTIN has 15 letters and digits.".into(),
+            ));
         }
 
-        // Ungrouped cash and bank ledgers go to the chart's first cash or bank group.
-        for (kind, account_type) in [("cash", AccountType::Cash), ("bank", AccountType::Bank)] {
-            let target = accounts
-                .iter()
-                .find(|a| a.is_group && a.account_type == Some(account_type))
-                .and_then(|a| group_ids.get(&a.name).copied());
-            if let Some(group_id) = target {
-                ledgers_placed += tx.execute(
-                    "INSERT INTO ledger_groups (ledger_id, group_id)
-                     SELECT id, ? FROM ledgers WHERE kind = ?
-                       AND id NOT IN (SELECT ledger_id FROM ledger_groups)",
-                    params![group_id, kind],
-                )?;
-            }
-        }
-
-        fill_default_settings(&tx, chart)?;
+        let tx = self.connection.transaction()?;
+        tx.execute(
+            "UPDATE book_settings SET company_name = ? WHERE id = 1",
+            [&company],
+        )?;
+        let applied = apply_chart_in(&tx, &chart)?;
+        let bank_ledger_id = ensure_ledger(&tx, &bank_name, AccountType::Bank)?;
+        ensure_ledger(&tx, "Discounts", AccountType::IncomeAccount)?;
+        tx.execute(
+            "UPDATE accounting_settings SET country = ?, currency = ?, fiscal_year_start = ?,
+                    fiscal_year_end = ?, gstin = ?, bank_ledger_id = ?, chart = ?, setup_complete = TRUE
+             WHERE id = 1",
+            params![defaults.country, currency, start.to_string(), end.to_string(), gstin, bank_ledger_id, chart],
+        )?;
+        fill_default_settings(&tx, &chart)?;
         let settings = settings_of(&tx)?;
         tx.commit()?;
-        Ok(ChartApplied {
-            chart: chart.to_owned(),
-            groups_created,
-            ledgers_created,
-            ledgers_placed,
+        Ok(SetupResult {
+            company_name: company,
+            chart: applied,
             settings,
         })
     }
@@ -673,6 +685,180 @@ impl Store {
         tx.commit()?;
         Ok(settings)
     }
+}
+
+/// A ledger of the given type: the existing one of that name, else a new one in the
+/// first group of that type, else in a new group under the right root, as Frappe Books'
+/// `ensure_bank_account` and `ensure_discount_account` do. Discounts go under the
+/// indirect income group when there is one.
+fn ensure_ledger(tx: &Transaction<'_>, name: &str, kind: AccountType) -> Result<i64, StoreError> {
+    if let Some((id, _)) = find_ledger(tx, name)? {
+        tx.execute(
+            "INSERT INTO ledger_accounts (ledger_id, account_type) VALUES (?, ?) ON CONFLICT (ledger_id) DO NOTHING",
+            params![id, kind.label()],
+        )?;
+        return Ok(id);
+    }
+    let chart = chart_of(tx)?;
+    let group = if kind == AccountType::IncomeAccount {
+        chart
+            .groups
+            .iter()
+            .find(|g| {
+                ["indirect income", "indirect incomes"].contains(&g.name.to_lowercase().as_str())
+            })
+            .or_else(|| {
+                chart
+                    .groups
+                    .iter()
+                    .find(|g| g.root_type == Some(RootType::Income))
+            })
+    } else {
+        chart.groups.iter().find(|g| g.account_type == Some(kind))
+    }
+    .map(|g| g.id);
+    let group_id =
+        match group {
+            Some(id) => id,
+            None => {
+                let (group_name, root) = match kind {
+                    AccountType::Bank => ("Bank Accounts", RootType::Asset),
+                    _ => ("Indirect Income", RootType::Income),
+                };
+                let id: i64 = tx.query_row(
+                    "INSERT INTO account_groups (name, name_key) VALUES (?, ?) RETURNING id",
+                    params![group_name, group_name.to_lowercase()],
+                    |row| row.get(0),
+                )?;
+                tx.execute(
+                "INSERT INTO group_accounts (group_id, root_type, account_type) VALUES (?, ?, ?)",
+                params![id, root.label(), (kind == AccountType::Bank).then_some(kind.label())],
+            )?;
+                id
+            }
+        };
+    let ledger_kind = if kind == AccountType::Bank {
+        "bank"
+    } else {
+        "general"
+    };
+    let id: i64 = tx.query_row(
+        "INSERT INTO ledgers (name, name_key, kind) VALUES (?, ?, ?) RETURNING id",
+        params![name, name.to_lowercase(), ledger_kind],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "INSERT INTO ledger_groups VALUES (?, ?)",
+        params![id, group_id],
+    )?;
+    tx.execute(
+        "INSERT INTO ledger_accounts (ledger_id, account_type) VALUES (?, ?)",
+        params![id, kind.label()],
+    )?;
+    Ok(id)
+}
+
+/// Applies a chart template inside a transaction; see [`Store::apply_chart`].
+fn apply_chart_in(tx: &Transaction<'_>, chart: &str) -> Result<ChartApplied, StoreError> {
+    let accounts = load_chart(chart).map_err(invalid)?;
+    let (mut groups_created, mut ledgers_created, mut ledgers_placed) = (0, 0, 0);
+    let mut group_ids: HashMap<String, i64> = HashMap::new();
+
+    for account in &accounts {
+        let parent_id = account
+            .parent
+            .as_ref()
+            .and_then(|p| group_ids.get(p).copied());
+        if account.is_group {
+            let id = match find_group(tx, &account.name)? {
+                Some(id) => id,
+                None => {
+                    groups_created += 1;
+                    tx.query_row(
+                        "INSERT INTO account_groups (name, name_key, parent_id) VALUES (?, ?, ?) RETURNING id",
+                        params![account.name, account.name.to_lowercase(), parent_id],
+                        |row| row.get(0),
+                    )?
+                }
+            };
+            // Classify the group unless someone already did.
+            tx.execute(
+                "INSERT INTO group_accounts (group_id, root_type, account_type) VALUES (?, ?, ?)
+                 ON CONFLICT (group_id) DO NOTHING",
+                params![
+                    id,
+                    account.root_type.label(),
+                    account.account_type.map(AccountType::label)
+                ],
+            )?;
+            group_ids.insert(account.name.clone(), id);
+            continue;
+        }
+        let Some(group_id) = parent_id else { continue };
+        let ledger_id = match find_ledger(tx, &account.name)? {
+            Some((id, existing_group)) => {
+                if existing_group.is_none() {
+                    tx.execute(
+                        "INSERT INTO ledger_groups VALUES (?, ?)",
+                        params![id, group_id],
+                    )?;
+                    ledgers_placed += 1;
+                }
+                id
+            }
+            None => {
+                ledgers_created += 1;
+                let kind = match account.account_type {
+                    Some(AccountType::Cash) => "cash",
+                    Some(AccountType::Bank) => "bank",
+                    _ => "general",
+                };
+                let id: i64 = tx.query_row(
+                    "INSERT INTO ledgers (name, name_key, kind) VALUES (?, ?, ?) RETURNING id",
+                    params![account.name, account.name.to_lowercase(), kind],
+                    |row| row.get(0),
+                )?;
+                tx.execute(
+                    "INSERT INTO ledger_groups VALUES (?, ?)",
+                    params![id, group_id],
+                )?;
+                id
+            }
+        };
+        if let Some(kind) = account.account_type {
+            tx.execute(
+                "INSERT INTO ledger_accounts (ledger_id, account_type) VALUES (?, ?)
+                 ON CONFLICT (ledger_id) DO NOTHING",
+                params![ledger_id, kind.label()],
+            )?;
+        }
+    }
+
+    // Ungrouped cash and bank ledgers go to the chart's first cash or bank group.
+    for (kind, account_type) in [("cash", AccountType::Cash), ("bank", AccountType::Bank)] {
+        let target = accounts
+            .iter()
+            .find(|a| a.is_group && a.account_type == Some(account_type))
+            .and_then(|a| group_ids.get(&a.name).copied());
+        if let Some(group_id) = target {
+            ledgers_placed += tx.execute(
+                "INSERT INTO ledger_groups (ledger_id, group_id)
+                 SELECT id, ? FROM ledgers WHERE kind = ?
+                   AND id NOT IN (SELECT ledger_id FROM ledger_groups)",
+                params![group_id, kind],
+            )?;
+        }
+    }
+
+    fill_default_settings(tx, chart)?;
+    let settings = settings_of(tx)?;
+    Ok(ChartApplied {
+        chart: chart.to_owned(),
+        groups_created,
+        ledgers_created,
+        ledgers_placed,
+        settings,
+    })
 }
 
 /// Fills empty default-account settings from the book's ledgers, as Frappe Books' setup
@@ -973,6 +1159,116 @@ mod tests {
         assert_eq!(saved.discount_ledger_id, None);
         assert!(saved.setup_complete);
         assert!(serde_json::from_value::<SettingsUpdate>(json!({"unknown": 1})).is_err());
+    }
+
+    fn day(text: &str) -> chrono::NaiveDate {
+        chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
+    }
+
+    // Ported from Frappe Books' run_setup: chart, bank, discounts, defaults, once only.
+    #[test]
+    fn setup_creates_the_company_once() {
+        let mut store = book();
+        let result = store
+            .setup_company(
+                decode(json!({"company_name": "Shree Traders", "country": "India",
+                              "bank_name": "HDFC Bank", "gstin": "27aapfu0939f1zv"})),
+                day("2026-11-20"),
+            )
+            .unwrap();
+        let settings = &result.settings;
+        assert!(settings.setup_complete);
+        assert_eq!(settings.currency, "INR");
+        assert_eq!(settings.chart.as_deref(), Some(TALLY_CHART));
+        assert_eq!(
+            (
+                settings.fiscal_year_start.as_deref(),
+                settings.fiscal_year_end.as_deref()
+            ),
+            (Some("2026-04-01"), Some("2027-03-31"))
+        );
+        assert_eq!(settings.gstin.as_deref(), Some("27AAPFU0939F1ZV"));
+        let chart = store.chart_of_accounts().unwrap();
+        let bank = chart
+            .ledgers
+            .iter()
+            .find(|l| l.name == "HDFC Bank")
+            .unwrap();
+        assert_eq!(
+            (bank.kind.as_str(), bank.effective_type),
+            ("bank", Some(AccountType::Bank))
+        );
+        assert_eq!(settings.bank_ledger_id, Some(bank.id));
+        assert_eq!(
+            chart
+                .groups
+                .iter()
+                .find(|g| Some(g.id) == bank.group_id)
+                .unwrap()
+                .name,
+            "Bank Accounts"
+        );
+        assert!(settings.discount_ledger_id.is_some() && settings.round_off_ledger_id.is_some());
+        assert_eq!(
+            serde_json::to_value(store.settings().unwrap()).unwrap()["company_name"],
+            "Shree Traders"
+        );
+        let again = store.setup_company(
+            decode(json!({"company_name": "X", "country": "India", "bank_name": "Y"})),
+            day("2026-11-20"),
+        );
+        assert!(matches!(again, Err(StoreError::Conflict(_))));
+    }
+
+    #[test]
+    fn setup_with_a_frappe_chart_adds_discounts_under_indirect_income() {
+        let mut store = book();
+        let result = store
+            .setup_company(
+                decode(json!({"company_name": "Acme", "country": "India", "bank_name": "Axis",
+                              "chart": "India - Chart of Accounts", "fiscal_year_start": "2026-01-01"})),
+                day("2026-11-20"),
+            )
+            .unwrap();
+        assert_eq!(
+            result.settings.fiscal_year_end.as_deref(),
+            Some("2026-12-31")
+        );
+        let chart = store.chart_of_accounts().unwrap();
+        let discounts = chart
+            .ledgers
+            .iter()
+            .find(|l| l.name == "Discounts")
+            .unwrap();
+        let group = chart
+            .groups
+            .iter()
+            .find(|g| Some(g.id) == discounts.group_id)
+            .unwrap();
+        assert_eq!(
+            (group.name.as_str(), discounts.root_type),
+            ("Indirect Income", Some(RootType::Income))
+        );
+        assert_eq!(result.settings.discount_ledger_id, Some(discounts.id));
+    }
+
+    #[test]
+    fn setup_checks_its_input_and_changes_nothing_when_it_fails() {
+        let mut store = book();
+        for body in [
+            json!({"company_name": " ", "country": "India", "bank_name": "B"}),
+            json!({"company_name": "A", "country": "Atlantis", "bank_name": "B"}),
+            json!({"company_name": "A", "country": "India", "bank_name": "B", "currency": "rupee"}),
+            json!({"company_name": "A", "country": "India", "bank_name": "B", "chart": "Nowhere"}),
+            json!({"company_name": "A", "country": "India", "bank_name": "B",
+                   "fiscal_year_start": "2026-04-01", "fiscal_year_end": "2027-04-01"}),
+            json!({"company_name": "A", "country": "India", "bank_name": "B", "gstin": "12"}),
+        ] {
+            let result = store.setup_company(decode(body.clone()), day("2026-11-20"));
+            assert!(matches!(result, Err(StoreError::Invalid(_))), "{body}");
+        }
+        assert!(store.chart_of_accounts().unwrap().groups.is_empty());
+        assert!(!store.accounting_settings().unwrap().setup_complete);
     }
 
     #[test]

@@ -86,6 +86,7 @@ This roadmap breaks the work into **10 levels**, plus an **AI integration track 
 | 1.9c | Cost centres and accounting dimensions **[E]** | `doctype/cost_center`, `accounting_dimension`, `cost_center_allocation` | Today's cost categories become cost centres; extra dimensions (branch, project) |
 | 1.9d | Payment terms **[E]** | `doctype/payment_term`, `payment_terms_template` | Credit days and instalments on parties and invoices |
 | 1.10 | Tally master import | existing `imports.rs` | Tally groups and ledgers mapped onto the new tree |
+| 1.11 | DuckDB engine upgrade | — | Move from `duckdb` 1.4 to the 1.20000 (DuckDB 2.0) crate. Old books open through the migration runner's backup-then-upgrade path, with an unchanged Trial Balance. Clears the `zip` and `chrono` advisory exceptions recorded in `deny.toml`. |
 
 **AI:** MCP tools and CLI commands for accounts, parties, items, taxes and the setup wizard (`opentally company create --chart in`).
 **Tests ported:** `test_settings_accounts`, `test_settings_rules`, `test_installation`, `test_units`, `test_item_series`, `test_set_once_fields`, `test_field_rules`.
@@ -325,7 +326,7 @@ Level A runs alongside: A1–A3 with L0 · tools grow with L1–L8 · A4 ships a
 |---|---|
 | Plan, licence, roadmap | ✅ Done (PR #4) |
 | Level 0 | ✅ Done except the parts moved to Level 1. Steps 0.1–0.13 are complete: workspace, migrations, single writer, `ot-core`, auth, `/api/v1`, Leptos interface, CI, performance probe (`docs/bench.md`: Trial Balance 38 ms at 100,000 vouchers; posting 39 vouchers/s), `opentally` CLI and the native MCP server at `/mcp` with the `opentally mcp` stdio bridge. Moved to the start of Level 1: 0.2b storage traits, the generic `/api/v1/{doctype}` routes and the OpenAPI spec. |
-| Level 1 | ⏳ In progress. Done: 0.2b as a portable-SQL check on every new migration (repository traits come with the PostgreSQL backend in Level 9, where a second implementation exists to shape them), 1.1 accounting settings, and 1.2 chart of accounts with 14 templates (Tally's 28 reserved groups, Frappe Books' standard chart and 12 country charts). Next: 1.3 setup wizard, then 1.4–1.10. |
+| Level 1 | ⏳ In progress. Done: 0.2b as a portable-SQL check on every new migration (repository traits come with the PostgreSQL backend in Level 9, where a second implementation exists to shape them), 1.1 accounting settings, 1.2 chart of accounts with 14 templates (Tally's 28 reserved groups, Frappe Books' standard chart and 12 country charts), and 1.3 setup wizard (company, country, currency, fiscal year, chart, bank ledger; API, Leptos wizard and Chart of Accounts screen). Next: 1.4–1.11. |
 | Later levels | Not started |
 
 ## Verification (each level)

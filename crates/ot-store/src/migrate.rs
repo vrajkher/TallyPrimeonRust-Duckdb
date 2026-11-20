@@ -34,6 +34,37 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "auth",
         parts: &[include_str!("../migrations/duckdb/0002_auth/1_users.sql")],
     },
+    Migration {
+        version: 3,
+        name: "chart",
+        parts: &[include_str!(
+            "../migrations/duckdb/0003_chart/1_accounts.sql"
+        )],
+    },
+];
+
+/// Migrations from this version on must use SQL that PostgreSQL also accepts, so a
+/// PostgreSQL backend can be added later (roadmap step 0.2b). Version 1 is the
+/// original DuckDB schema and is exempt.
+pub const FIRST_PORTABLE_MIGRATION: i32 = 2;
+
+/// DuckDB-only SQL that portable migrations must not use.
+pub const NON_PORTABLE_SQL: &[&str] = &[
+    "HUGEINT",
+    "UBIGINT",
+    "UINTEGER",
+    "QUALIFY",
+    "::",
+    "STRING_AGG",
+    "LIST(",
+    "STRUCT(",
+    "CREATE OR REPLACE TABLE",
+    "INSERT OR REPLACE",
+    "INSERT OR IGNORE",
+    "PRAGMA",
+    "EXCLUDE (",
+    "GROUP BY ALL",
+    "ORDER BY ALL",
 ];
 
 impl Migration {
@@ -224,10 +255,42 @@ mod tests {
         assert_eq!(MIGRATIONS[0].checksum(), MIGRATIONS[0].checksum());
     }
 
+    // Roadmap step 0.2b: new schema must stay PostgreSQL-compatible.
+    #[test]
+    fn new_migrations_use_portable_sql() {
+        // The check finds DuckDB-only SQL: the exempt first migration uses some.
+        let original = MIGRATIONS[0].parts.join("\n").to_uppercase();
+        assert!(
+            NON_PORTABLE_SQL
+                .iter()
+                .any(|banned| original.contains(banned))
+        );
+        for migration in MIGRATIONS
+            .iter()
+            .filter(|m| m.version >= FIRST_PORTABLE_MIGRATION)
+        {
+            for part in migration.parts {
+                let code: String = part
+                    .lines()
+                    .map(|line| line.split("--").next().unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .to_uppercase();
+                for banned in NON_PORTABLE_SQL {
+                    assert!(
+                        !code.contains(banned),
+                        "migration {} uses DuckDB-only {banned}",
+                        migration.version
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn fresh_book_applies_all_then_nothing() {
         let mut connection = Connection::open_in_memory().unwrap();
-        assert_eq!(migrate(&mut connection).unwrap(), vec![1, 2]);
+        assert_eq!(migrate(&mut connection).unwrap(), vec![1, 2, 3]);
         assert!(migrate(&mut connection).unwrap().is_empty());
         let (name, checksum): (String, String) = connection
             .query_row(
@@ -304,7 +367,7 @@ mod tests {
         let mut connection = Connection::open(&path).unwrap();
         migrate(&mut connection).unwrap();
         drop(connection);
-        assert_eq!(file_version(&path).unwrap(), 2);
+        assert_eq!(file_version(&path).unwrap(), 3);
         assert_eq!(backup_before_migrating(&path).unwrap(), None);
     }
 }

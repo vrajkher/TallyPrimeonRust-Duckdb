@@ -66,6 +66,9 @@ pub enum Command {
         #[arg(long, value_name = "URL")]
         server: Option<String>,
     },
+    /// Chart of accounts templates.
+    #[command(subcommand)]
+    Chart(ChartCommand),
     /// Copy the book to a backup file.
     Backup {
         /// Where to write the copy.
@@ -81,6 +84,17 @@ pub enum Command {
         /// Confirm that the current book should be replaced.
         #[arg(long)]
         yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ChartCommand {
+    /// List the chart templates a book can start from.
+    List,
+    /// Add a template's groups and ledgers to the book. Existing ones are kept.
+    Apply {
+        /// The template's name, as `chart list` shows it.
+        name: String,
     },
 }
 
@@ -339,6 +353,29 @@ pub fn run(cli: &Cli, command: &Command, input: &mut dyn BufRead) -> Result<Outp
             ))
         }
         Command::User(user) => run_user(&path, user, input),
+        Command::Chart(ChartCommand::List) => {
+            let charts = ot_core::accounts::charts();
+            let text = charts
+                .iter()
+                .map(|c| format!("{:<4} {}", c.country_code, c.name))
+                .collect::<Vec<_>>()
+                .join("\n");
+            Ok(Output::new(text, &charts))
+        }
+        Command::Chart(ChartCommand::Apply { name }) => {
+            let mut store = open_existing(&path)?;
+            let applied = store.apply_chart(name)?;
+            Ok(Output::new(
+                format!(
+                    "Applied {}: {} groups and {} ledgers created, {} ledgers placed in groups.",
+                    applied.chart,
+                    applied.groups_created,
+                    applied.ledgers_created,
+                    applied.ledgers_placed
+                ),
+                &applied,
+            ))
+        }
         Command::Token(token) => run_token(&path, token),
         Command::Backup { to, force } => {
             let store = open_existing(&path)?;
@@ -826,6 +863,23 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn chart_templates_are_listed_and_applied() {
+        let dir = temp("chart");
+        exec(&dir, &["migrate"], "").unwrap();
+        let list = exec(&dir, &["--json", "chart", "list"], "").unwrap();
+        assert_eq!(list.value.as_array().unwrap().len(), 14);
+        let applied = exec(
+            &dir,
+            &["chart", "apply", "Tally (India) - Reserved Groups"],
+            "",
+        )
+        .unwrap();
+        assert!(applied.text.contains("28 groups"), "{}", applied.text);
+        let unknown = exec(&dir, &["chart", "apply", "Atlantis"], "");
+        assert_eq!(unknown.unwrap_err().code, ExitCode::Invalid);
     }
 
     #[test]

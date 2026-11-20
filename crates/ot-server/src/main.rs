@@ -320,6 +320,80 @@ async fn bank_undo(
         .map_err(ApiError)
 }
 
+async fn chart_of_accounts(
+    State(db): State<Database>,
+) -> ApiResult<Json<ot_store::chart::ChartOfAccounts>> {
+    db.read(|store| store.chart_of_accounts())
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn chart_templates() -> Json<Vec<ot_core::accounts::ChartInfo>> {
+    Json(ot_core::accounts::charts())
+}
+
+#[derive(serde::Deserialize)]
+struct ChartChoice {
+    chart: String,
+}
+
+async fn apply_chart(
+    State(db): State<Database>,
+    Json(input): Json<ChartChoice>,
+) -> ApiResult<Json<ot_store::chart::ChartApplied>> {
+    db.write(move |store| store.apply_chart(&input.chart))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+#[derive(serde::Deserialize)]
+struct RootChoice {
+    root_type: ot_core::accounts::RootType,
+}
+
+async fn set_group_root_type(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+    Json(input): Json<RootChoice>,
+) -> ApiResult<Json<ot_store::chart::GroupAccount>> {
+    db.write(move |store| store.set_group_root_type(id, input.root_type))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn set_ledger_account(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+    Json(input): Json<ot_store::chart::LedgerAccountUpdate>,
+) -> ApiResult<Json<ot_store::chart::LedgerAccount>> {
+    db.write(move |store| store.set_ledger_account(id, input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn accounting_settings(
+    State(db): State<Database>,
+) -> ApiResult<Json<ot_store::chart::AccountingSettings>> {
+    db.read(|store| store.accounting_settings())
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn update_accounting_settings(
+    State(db): State<Database>,
+    Json(input): Json<ot_store::chart::SettingsUpdate>,
+) -> ApiResult<Json<ot_store::chart::AccountingSettings>> {
+    db.write(move |store| store.update_accounting_settings(input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
 /// The book's API routes, served at both `/api` and `/api/v1`.
 fn book_routes() -> Router<AppState> {
     Router::new()
@@ -344,6 +418,15 @@ fn book_routes() -> Router<AppState> {
         .route("/bank/{id}", get(bank_review).post(bank_import))
         .route("/bank/{id}/matches", axum::routing::post(bank_match))
         .route("/bank/matches/{id}/undo", axum::routing::post(bank_undo))
+        .route("/accounts", get(chart_of_accounts))
+        .route("/accounts/charts", get(chart_templates))
+        .route("/accounts/chart", post(apply_chart))
+        .route("/groups/{id}/root-type", post(set_group_root_type))
+        .route("/ledgers/{id}/account", post(set_ledger_account))
+        .route(
+            "/settings/accounting",
+            get(accounting_settings).post(update_accounting_settings),
+        )
         .route("/session/password", post(auth::change_password))
         .route("/users", get(auth::list_users).post(auth::add_user))
         .route("/users/{id}", post(auth::change_user))

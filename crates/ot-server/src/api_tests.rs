@@ -713,3 +713,97 @@ async fn mcp_uses_the_callers_rights() {
         "Your role does not allow this action."
     );
 }
+
+#[tokio::test]
+async fn chart_of_accounts_and_settings_follow_frappe_roles() {
+    let app = App::new();
+    let asha = set_up_admin(&app).await;
+    let charts = app.get("/api/v1/accounts/charts", &asha.read()).await;
+    assert_eq!(charts.body.as_array().unwrap().len(), 14);
+    let applied = app
+        .post(
+            "/api/v1/accounts/chart",
+            &asha.write(),
+            json!({"chart": "Tally (India) - Reserved Groups"}),
+        )
+        .await;
+    assert_eq!(applied.status, StatusCode::OK, "{}", applied.body);
+    assert_eq!(applied.body["groups_created"], 28);
+    let chart = app.get("/api/v1/accounts", &asha.read()).await;
+    assert_eq!(chart.body["unclassified_ledgers"], 0);
+    let unknown = app
+        .post(
+            "/api/v1/accounts/chart",
+            &asha.write(),
+            json!({"chart": "Atlantis"}),
+        )
+        .await;
+    assert_eq!(unknown.status, StatusCode::BAD_REQUEST);
+
+    for (username, role) in [("ravi", "books_user"), ("veena", "viewer")] {
+        app.post(
+            "/api/v1/users",
+            &asha.write(),
+            json!({"username": username, "full_name": username, "password": "another long secret", "roles": [role]}),
+        )
+        .await;
+    }
+    let sign_in = |username: &'static str| {
+        let app = &app;
+        async move {
+            Browser::from(
+                &app.post(
+                    "/api/v1/session",
+                    &[],
+                    json!({"username": username, "password": "another long secret"}),
+                )
+                .await,
+            )
+        }
+    };
+    let ravi = sign_in("ravi").await;
+    let veena = sign_in("veena").await;
+    // Books Users read the accounting settings but not the chart, and change neither.
+    assert_eq!(
+        app.get("/api/v1/settings/accounting", &ravi.read())
+            .await
+            .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.get("/api/v1/accounts", &ravi.read()).await.status,
+        StatusCode::FORBIDDEN
+    );
+    let change = app
+        .post(
+            "/api/v1/settings/accounting",
+            &ravi.write(),
+            json!({"country": "India"}),
+        )
+        .await;
+    assert_eq!(change.status, StatusCode::FORBIDDEN);
+    // Viewers read the chart and change nothing.
+    assert_eq!(
+        app.get("/api/v1/accounts", &veena.read()).await.status,
+        StatusCode::OK
+    );
+    let root = app
+        .post(
+            "/api/v1/groups/1/root-type",
+            &veena.write(),
+            json!({"root_type": "Asset"}),
+        )
+        .await;
+    assert_eq!(root.status, StatusCode::FORBIDDEN);
+
+    let saved = app
+        .post(
+            "/api/v1/settings/accounting",
+            &asha.write(),
+            json!({"country": "India", "fiscal_year_start": "2025-04-01", "setup_complete": true}),
+        )
+        .await;
+    assert_eq!(saved.status, StatusCode::OK, "{}", saved.body);
+    assert_eq!(saved.body["fiscal_year_start"], "2025-04-01");
+    assert!(saved.body["round_off_ledger_id"].is_i64());
+}

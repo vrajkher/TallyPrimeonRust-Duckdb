@@ -285,8 +285,15 @@ fn rule(method: &Method, path: &str) -> Option<Rule> {
         }
         (false, "/vouchers" | "/vouchers/{id}/changes") => Rule::Handler,
         (false, "/import") => Rule::Any(&[(JOURNAL, Perm::Import)]),
-        (true, "/settings") => Rule::Any(&[(SETTINGS, Perm::Read)]),
-        (false, "/settings" | "/settings/close-period") => Rule::Any(&[(SETTINGS, Perm::Write)]),
+        (true, "/settings" | "/settings/accounting") => Rule::Any(&[(SETTINGS, Perm::Read)]),
+        (false, "/settings" | "/settings/close-period" | "/settings/accounting") => {
+            Rule::Any(&[(SETTINGS, Perm::Write)])
+        }
+        (true, "/accounts" | "/accounts/charts") => Rule::Any(&[(ACCOUNT, Perm::Read)]),
+        (false, "/accounts/chart") => Rule::Any(&[(ACCOUNT, Perm::Create)]),
+        (false, "/groups/{id}/root-type" | "/ledgers/{id}/account") => {
+            Rule::Any(&[(ACCOUNT, Perm::Write)])
+        }
         (true, p) if p.starts_with("/reports/") => Rule::Any(&[(LEDGER, Perm::Report)]),
         (true, "/bank/{id}") => Rule::Any(&[(LEDGER, Perm::Read)]),
         (false, "/bank/{id}" | "/bank/{id}/matches" | "/bank/matches/{id}/undo") => {
@@ -811,6 +818,10 @@ mod tests {
             (Method::POST, "/api/bank/matches/{id}/undo"),
             (Method::GET, "/api/v1/users"),
             (Method::DELETE, "/api/v1/tokens/{id}"),
+            (Method::GET, "/api/v1/accounts"),
+            (Method::POST, "/api/v1/accounts/chart"),
+            (Method::POST, "/api/v1/ledgers/{id}/account"),
+            (Method::POST, "/api/v1/settings/accounting"),
         ] {
             assert!(rule(&method, path).is_some(), "{method} {path}");
         }

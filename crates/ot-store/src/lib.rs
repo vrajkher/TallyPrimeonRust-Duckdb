@@ -5,6 +5,7 @@
 mod acceptance;
 pub mod auth;
 pub mod bank;
+pub mod chart;
 pub mod imports;
 pub mod migrate;
 pub mod reports;

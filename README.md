@@ -106,6 +106,12 @@ API tokens let the ChatGPT and Claude connector, scripts and other tools act for
 
 Every API route is available under both `/api` and `/api/v1`. New clients should use `/api/v1`.
 
+## Chart of accounts
+
+Groups are group accounts and ledgers are ledger accounts, as in Tally. Each group has a root type (Asset, Liability, Equity, Income or Expense), and each ledger can have an account type such as Bank, Receivable, Tax or Round Off, as in Frappe Books. Groups with Tally's reserved names, such as Sundry Debtors, are classified automatically; others take their parent's root type, or one you set on the top-level group with `POST /api/v1/groups/{id}/root-type`. A root type or account type cannot be changed once set.
+
+To start from a template, list them with `opentally chart list` (or `GET /api/v1/accounts/charts`) and apply one with `opentally chart apply "Tally (India) - Reserved Groups"` (or `POST /api/v1/accounts/chart`). The templates are Tally's 28 reserved groups, Frappe Books' standard chart, and its charts for India and 11 other countries. Applying a template keeps existing groups and ledgers, places ungrouped Cash and Bank ledgers in the right groups, and fills the default round-off, write-off, discount, receivable and payable accounts in `GET /api/v1/settings/accounting`. It never changes postings or balances.
+
 ## Record your first voucher
 
 1. Open **Company & import**, enter your company name, and select **Save company**.

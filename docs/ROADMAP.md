@@ -325,7 +325,8 @@ Level A runs alongside: A1–A3 with L0 · tools grow with L1–L8 · A4 ships a
 |---|---|
 | Plan, licence, roadmap | ✅ Done (PR #4) |
 | Level 0 | ✅ Done except the parts moved to Level 1. Steps 0.1–0.13 are complete: workspace, migrations, single writer, `ot-core`, auth, `/api/v1`, Leptos interface, CI, performance probe (`docs/bench.md`: Trial Balance 38 ms at 100,000 vouchers; posting 39 vouchers/s), `opentally` CLI and the native MCP server at `/mcp` with the `opentally mcp` stdio bridge. Moved to the start of Level 1: 0.2b storage traits, the generic `/api/v1/{doctype}` routes and the OpenAPI spec. |
-| All later levels | Not started |
+| Level 1 | ⏳ In progress. Done: 0.2b as a portable-SQL check on every new migration (repository traits come with the PostgreSQL backend in Level 9, where a second implementation exists to shape them), 1.1 accounting settings, and 1.2 chart of accounts with 14 templates (Tally's 28 reserved groups, Frappe Books' standard chart and 12 country charts). Next: 1.3 setup wizard, then 1.4–1.10. |
+| Later levels | Not started |
 
 ## Verification (each level)
 

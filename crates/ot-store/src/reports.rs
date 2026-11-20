@@ -31,6 +31,12 @@ pub struct AccountGroup {
     parent_id: Option<i64>,
 }
 
+impl AccountGroup {
+    pub fn id(&self) -> i64 {
+        self.id
+    }
+}
+
 #[derive(Deserialize)]
 pub struct NewGroup {
     name: String,

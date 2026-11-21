@@ -24,7 +24,13 @@ function httpsUrl(value, label) {
 export function configFromEnvironment(env, mode) {
   const apiPort = port(env.OPENTALLY_PORT ?? env.VOUCHER_PORT, "OPENTALLY_PORT", 3000);
   const writes = enabled(env.OPENTALLY_MCP_WRITES);
-  if (mode === "stdio") return { apiPort, writes };
+  // A book with users needs an OpenTally API token (Authorization: Bearer).
+  const token = env.OPENTALLY_API_TOKEN?.trim();
+  if (token !== undefined && token !== "" && !/^ot_[0-9a-f]{64}$/.test(token)) {
+    throw new Error("OPENTALLY_API_TOKEN must be an OpenTally API token starting with ot_.");
+  }
+  const auth = token ? { token } : {};
+  if (mode === "stdio") return { apiPort, writes, ...auth };
   const listenPort = port(env.OPENTALLY_MCP_PORT, "OPENTALLY_MCP_PORT", 8787);
   const resource = httpsUrl(env.OPENTALLY_MCP_RESOURCE_URL, "OPENTALLY_MCP_RESOURCE_URL");
   if (resource.pathname !== "/mcp") throw new Error("OPENTALLY_MCP_RESOURCE_URL must end in /mcp.");
@@ -38,7 +44,7 @@ export function configFromEnvironment(env, mode) {
   const origins = new Set([resource.origin, ...approvedOrigins.map((origin) =>
     httpsUrl(origin, "OPENTALLY_MCP_ALLOWED_ORIGINS").origin)]);
   return {
-    apiPort, writes, listenPort, origins, resource: resource.href, issuer: env.OPENTALLY_MCP_ISSUER,
+    ...auth, apiPort, writes, listenPort, origins, resource: resource.href, issuer: env.OPENTALLY_MCP_ISSUER,
     introspection: introspection.href, clientId: env.OPENTALLY_MCP_CLIENT_ID,
     clientSecret: env.OPENTALLY_MCP_CLIENT_SECRET,
   };

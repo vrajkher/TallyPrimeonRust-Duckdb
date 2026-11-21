@@ -25,7 +25,7 @@ async function readRequest(request) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-export function createHttp(config, { api = createApi(config.apiPort), authorize = createAuthorizer(config) } = {}) {
+export function createHttp(config, { api = createApi(config.apiPort, config.token), authorize = createAuthorizer(config) } = {}) {
   const resource = new URL(config.resource);
   const server = createHttpServer({ requestTimeout: 75_000, headersTimeout: 20_000 }, async (request, response) => {
     const address = server.address();

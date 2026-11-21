@@ -278,6 +278,36 @@ pub struct VoucherChange {
     voucher: Option<NewVoucher>,
 }
 
+impl NewVoucher {
+    /// `payment`, `receipt`, `journal` or `contra`.
+    pub fn kind_key(&self) -> &'static str {
+        match self.entry {
+            VoucherEntry::Payment(_) => "payment",
+            VoucherEntry::Receipt(_) => "receipt",
+            VoucherEntry::Journal { .. } => "journal",
+            VoucherEntry::Contra { .. } => "contra",
+        }
+    }
+}
+
+impl VoucherChange {
+    /// The replacement voucher, or `None` when the change cancels the voucher.
+    pub fn replacement(&self) -> Option<&NewVoucher> {
+        self.voucher.as_ref()
+    }
+
+    /// Records the signed-in user instead of a typed operator name.
+    pub fn set_actor(&mut self, actor: String) {
+        self.actor = actor;
+    }
+}
+
+impl Voucher {
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+}
+
 #[derive(Serialize)]
 pub struct VoucherEvent {
     revision: i32,
@@ -296,28 +326,48 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn open(path: &Path) -> duckdb::Result<Self> {
+    /// Opens a book file, applying any pending schema migrations.
+    /// Call [`crate::migrate::backup_before_migrating`] first to keep a copy.
+    pub fn open(path: &Path) -> Result<Self, crate::migrate::MigrationError> {
         Self::initialize(Connection::open(path)?)
     }
 
-    pub(crate) fn initialize(mut connection: Connection) -> duckdb::Result<Self> {
+    /// A new, empty book in memory, for tests and previews.
+    pub fn open_in_memory() -> Result<Self, crate::migrate::MigrationError> {
+        Self::initialize(Connection::open_in_memory()?)
+    }
+
+    pub(crate) fn initialize(
+        mut connection: Connection,
+    ) -> Result<Self, crate::migrate::MigrationError> {
         let tx = connection.transaction()?;
-        tx.execute_batch(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)",
-        )?;
-        let migrated: bool = tx.query_row(
-            "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 1)",
-            [],
-            |row| row.get(0),
-        )?;
-        if !migrated {
-            tx.execute_batch(include_str!("legacy.sql"))?;
-            tx.execute_batch(include_str!("schema.sql"))?;
-            tx.execute_batch(include_str!("migrate_v1.sql"))?;
-            tx.execute("INSERT INTO schema_migrations VALUES (1)", [])?;
-        }
+        crate::migrate::run(&tx)?;
         tx.commit()?;
         Ok(Self { connection })
+    }
+
+    /// The newest schema migration applied to this book.
+    pub fn schema_version(&self) -> Result<i32, StoreError> {
+        Ok(self.connection.query_row(
+            "SELECT coalesce(max(version), 0) FROM schema_migrations",
+            [],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Writes everything in the write-ahead log into the book file, so a plain file
+    /// copy is a complete backup.
+    pub fn checkpoint(&self) -> Result<(), StoreError> {
+        self.connection.execute_batch("CHECKPOINT")?;
+        Ok(())
+    }
+
+    /// Another connection to the same open book, for concurrent reads.
+    /// It shares the database instance, so it sees every committed write.
+    pub fn reader(&self) -> Result<Self, StoreError> {
+        Ok(Self {
+            connection: self.connection.try_clone()?,
+        })
     }
 
     pub fn ledgers(&self) -> Result<Vec<Ledger>, StoreError> {
@@ -404,6 +454,15 @@ impl Store {
     }
 
     pub fn add_voucher(&mut self, entry: NewVoucher) -> Result<(Voucher, bool), StoreError> {
+        self.add_voucher_by(entry, "Local operator")
+    }
+
+    /// Posts a voucher and records `actor` as the person who posted it.
+    pub fn add_voucher_by(
+        &mut self,
+        entry: NewVoucher,
+        actor: &str,
+    ) -> Result<(Voucher, bool), StoreError> {
         let key = request_key(&entry.request_id)?;
         let tx = self.connection.transaction()?;
         let (kind, mut revision) = prepare_local(&tx, entry)?;
@@ -436,7 +495,7 @@ impl Store {
             Some(&key),
             &revision,
             Audit {
-                actor: "Local operator",
+                actor,
                 action: "posted",
                 reason: "",
             },

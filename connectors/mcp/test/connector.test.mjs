@@ -67,6 +67,13 @@ test("HTTP configuration requires HTTPS resource discovery and scoped OAuth", ()
   assert.throws(() => configFromEnvironment({ ...oauthEnv, OPENTALLY_MCP_RESOURCE_URL: "http://example.test/mcp" }, "http"), /HTTPS/);
 });
 
+test("an OpenTally API token is passed through for books with users", () => {
+  const token = "ot_" + "a".repeat(64);
+  assert.deepEqual(configFromEnvironment({ OPENTALLY_API_TOKEN: token }, "stdio"), { apiPort: 3000, writes: false, token });
+  assert.deepEqual(configFromEnvironment({ OPENTALLY_API_TOKEN: " " }, "stdio"), { apiPort: 3000, writes: false });
+  assert.throws(() => configFromEnvironment({ OPENTALLY_API_TOKEN: "secret" }, "stdio"), /OPENTALLY_API_TOKEN/);
+});
+
 test("Streamable HTTP advertises both scopes and checks audience, origin and permission before book access", async (t) => {
   const config = configFromEnvironment(oauthEnv, "http");
   const effects = [];
@@ -153,9 +160,11 @@ test("installed stdio connector reads and writes a temporary Rust/DuckDB book", 
     app.once("error", (error) => { clearTimeout(timer); reject(error); });
     app.once("exit", (code) => { clearTimeout(timer); reject(new Error("OpenTally exited: " + code)); });
   });
+  // OPENTALLY_TEST_RUST_MCP=1 runs the same checks against the Rust `opentally mcp`.
+  const rust = process.env.OPENTALLY_TEST_RUST_MCP === "1";
   const executable = process.env.OPENTALLY_TEST_MCP ?? fileURLToPath(new URL("../src/cli.mjs", import.meta.url));
   const transport = new StdioClientTransport({
-    command: process.execPath, args: [executable, "stdio"],
+    command: rust ? liveBinary : process.execPath, args: rust ? ["mcp"] : [executable, "stdio"],
     env: { OPENTALLY_PORT: apiPort, OPENTALLY_MCP_WRITES: "true" },
   });
   const client = testClient();

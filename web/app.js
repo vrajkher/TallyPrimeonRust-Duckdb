@@ -87,10 +87,55 @@ function status(id, message = "", isError = false) {
   return target;
 }
 
-async function api(path, payload) {
+function cookieValue(name) {
+  const match = document.cookie.split("; ").find((part) => part.startsWith(name + "="));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : "";
+}
+
+let pendingSignIn;
+
+// Shows the sign-in dialog and resolves once the user has signed in.
+function signIn() {
+  pendingSignIn ??= new Promise((resolve) => {
+    const dialog = byId("sign-in-dialog");
+    const form = byId("sign-in-form");
+    status("sign-in-status");
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form));
+      const response = await fetch("/api/v1/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      }).catch(() => undefined);
+      const data = await response?.json().catch(() => ({}));
+      if (!response?.ok) {
+        status("sign-in-status", data?.error || "Could not sign in. Try again.", true);
+        return;
+      }
+      form.reset();
+      dialog.close();
+      showSession(data);
+      pendingSignIn = undefined;
+      resolve();
+    };
+    dialog.addEventListener("cancel", (event) => event.preventDefault());
+    if (!dialog.open) dialog.showModal();
+    form.elements.username.focus();
+  });
+  return pendingSignIn;
+}
+
+function showSession(session) {
+  const user = session?.user;
+  byId("session-label").textContent = user ? "Signed in as " + user.full_name : "Local books";
+  byId("sign-out").hidden = !user;
+}
+
+async function api(path, payload, retried = false) {
   const options = payload === undefined ? {} : {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": cookieValue("ot_csrf") },
     body: JSON.stringify(payload),
   };
   let response;
@@ -98,6 +143,10 @@ async function api(path, payload) {
     response = await fetch(path, options);
   } catch {
     throw new Error("Could not reach the local app. Check that it is running and try again.");
+  }
+  if (response.status === 401 && !retried) {
+    await signIn();
+    return api(path, payload, true);
   }
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -708,7 +757,7 @@ function updateNavigation() {
 }
 
 document.addEventListener("keydown", (event) => {
-  if (ledgerDialog.open || detailDialog.open || savingVoucher || event.altKey) return;
+  if (ledgerDialog.open || detailDialog.open || byId("sign-in-dialog").open || savingVoucher || event.altKey) return;
   if (!event.ctrlKey && !event.metaKey && !event.shiftKey && Object.hasOwn(shortcutKinds, event.key)) {
     event.preventDefault();
     switchKind(shortcutKinds[event.key]);
@@ -721,10 +770,19 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+byId("sign-out").addEventListener("click", async () => {
+  await fetch("/api/v1/session", { method: "DELETE" }).catch(() => undefined);
+  location.reload();
+});
+fetch("/api/v1/session").then((response) => response.json()).then(showSession).catch(() => undefined);
+
 window.addEventListener("hashchange", updateNavigation);
 updateNavigation();
 dateField.value = localDate();
 resetJournalLines();
+// The new interface opens voucher entry here with /?voucher=payment#entry.
+const requestedKind = new URLSearchParams(location.search).get("voucher");
+if (["payment", "receipt", "journal", "contra"].includes(requestedKind)) switchKind(requestedKind);
 updatePreview();
 loadLedgers().catch((error) => status("voucher-status", error.message, true));
 void refreshRegister(1);

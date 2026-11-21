@@ -1,0 +1,52 @@
+# cargo-deny policy: only licences that may be combined with AGPL-3.0.
+[graph]
+all-features = true
+
+[licenses]
+allow = [
+    "0BSD",
+    "AGPL-3.0-only", # OpenTally's own crates
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+# Path dependencies between the unpublished workspace crates.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[advisories]
+# Each exception says why it does not reach OpenTally and when to drop it.
+ignore = [
+    # zip (extraction bugs): only a build dependency of libduckdb-sys 1.4.4, which pins
+    # zip ^6, used to unpack DuckDB's own bundled source. OpenTally never extracts ZIP
+    # files. Drop these when the DuckDB upgrade (duckdb >= 1.20000) lands.
+    { id = "RUSTSEC-2026-0367", reason = "zip: build-time only, trusted archive; pinned by libduckdb-sys" },
+    { id = "RUSTSEC-2026-0368", reason = "zip: build-time only, trusted archive; pinned by libduckdb-sys" },
+    { id = "RUSTSEC-2026-0369", reason = "zip: build-time only, trusted archive; pinned by libduckdb-sys" },
+    { id = "RUSTSEC-2026-0429", reason = "zip: build-time only, trusted archive; pinned by libduckdb-sys" },
+    { id = "RUSTSEC-2026-0545", reason = "zip: build-time only, trusted archive; pinned by libduckdb-sys" },
+    { id = "RUSTSEC-2026-0547", reason = "zip: build-time only, trusted archive; pinned by libduckdb-sys" },
+    { id = "RUSTSEC-2026-0548", reason = "zip: build-time only, trusted archive; pinned by libduckdb-sys" },
+    # Unmaintained, no known vulnerability. chrono is also required by duckdb (via
+    # arrow) and OpenTally uses it for dates; replacing it means replacing duckdb's
+    # too, so it is tracked with the DuckDB upgrade. paste comes in through Leptos.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no vulnerability; also required by duckdb/arrow" },
+    { id = "RUSTSEC-2024-0436", reason = "paste unmaintained; transitive via Leptos" },
+]

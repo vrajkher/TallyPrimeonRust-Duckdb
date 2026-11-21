@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust checks and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --locked
+      # `cargo test` builds test executables only; the connector tests start the app.
+      - name: Build the app binary
+        run: cargo build --locked -p opentally
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: connectors/mcp/package-lock.json
+      - name: MCP connector tests against the Rust binary
+        working-directory: connectors/mcp
+        run: |
+          npm ci
+          OPENTALLY_TEST_BIN="$GITHUB_WORKSPACE/target/debug/opentally" npm test
+      - name: Same live MCP test against the Rust `opentally mcp`
+        working-directory: connectors/mcp
+        run: OPENTALLY_TEST_BIN="$GITHUB_WORKSPACE/target/debug/opentally" OPENTALLY_TEST_RUST_MCP=1 npm test
+
+  web:
+    name: Leptos interface build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk@0.22.2
+      - name: Build
+        working-directory: crates/ot-web
+        run: trunk build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opentally-web
+          path: crates/ot-web/dist
+          retention-days: 7
+
+  licenses:
+    name: Dependency licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses bans sources

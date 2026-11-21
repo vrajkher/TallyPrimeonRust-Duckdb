@@ -23,7 +23,7 @@
       <a class="nav-link" href="#bank" data-section="bank">Bank reconciliation</a>
       <button class="nav-link" id="manage-ledgers" type="button"><i class="icon icon-ledger" aria-hidden="true"></i>Ledgers</button>
     </nav>
-    <div class="sidebar-footer"><span aria-hidden="true"></span>Local books</div>
+    <div class="sidebar-footer"><span aria-hidden="true"></span><span id="session-label">Local books</span> <button id="sign-out" class="link-button" type="button" hidden>Sign out</button></div>
   </aside>
 
   <main class="workspace">
@@ -333,6 +333,21 @@
       <h3>Existing ledgers</h3>
       <ul id="ledger-list" class="ledger-list"></ul>
     </div>
+  </dialog>
+
+  <dialog id="sign-in-dialog" aria-labelledby="sign-in-title">
+    <div class="dialog-heading">
+      <div>
+        <h2 id="sign-in-title">Sign in to OpenTally</h2>
+        <p>This book has users. Sign in to continue.</p>
+      </div>
+    </div>
+    <form id="sign-in-form">
+      <label class="field"><span>User name</span><input name="username" autocomplete="username" maxlength="64" required></label>
+      <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="button primary" type="submit">Sign in</button>
+    </form>
+    <p id="sign-in-status" class="inline-status" role="status" hidden></p>
   </dialog>
 
   <dialog id="detail-dialog" aria-labelledby="detail-title">

@@ -1,0 +1,27 @@
+OpenTally
+Copyright (c) 2026 vrajkher
+
+Licensed under the GNU Affero General Public License, version 3 only.
+See LICENSE.
+
+This project includes work derived from Frappe Books
+(https://github.com/frappe/frappe-books, branch version-16),
+Copyright (c) Frappe Technologies Pvt. Ltd., licensed under AGPL-3.0-only.
+Derived work is translated from Python and TypeScript to Rust and modified.
+Each derived source file says which Frappe Books files it is based on.
+
+This project also includes work derived from ERPNext
+(https://github.com/frappe/erpnext, branch version-16),
+Copyright (c) Frappe Technologies Pvt. Ltd., licensed under GPL-3.0.
+GPL-3.0 code is combined with this AGPL-3.0 program as permitted by
+section 13 of both licences. Each derived source file says which
+ERPNext files it is based on and keeps its GPL-3.0 notice.
+
+"Frappe", "Frappe Books" and "ERPNext" are trademarks of Frappe Technologies Pvt. Ltd.
+OpenTally is not affiliated with or endorsed by Frappe Technologies.
+
+Components under other licences:
+- connectors/mcp and plugins/claude: MIT License (see connectors/mcp/LICENSE).
+- crates/ot-server/src/mcp/trial-balance-widget.html bundles the MCP Apps SDK and its
+  dependencies; their notices are in
+  crates/ot-server/src/mcp/trial-balance-widget-notices.txt.

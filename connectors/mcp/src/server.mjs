@@ -147,15 +147,16 @@ function completeDate(field, prefix) {
 
 class ApiError extends Error {}
 
-export function createApi(port) {
+export function createApi(port, token) {
   const base = "http://127.0.0.1:" + port;
+  const auth = token ? { Authorization: "Bearer " + token } : {};
   return async (path, body, signal) => {
     const timeout = AbortSignal.timeout(60_000);
     let response;
     try {
       response = await fetch(base + path, {
         method: body === undefined ? "GET" : "POST",
-        headers: body === undefined ? {} : { "Content-Type": "application/json" },
+        headers: body === undefined ? { ...auth } : { ...auth, "Content-Type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
         redirect: "error",
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,

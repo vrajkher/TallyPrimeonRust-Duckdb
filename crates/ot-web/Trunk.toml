@@ -1,0 +1,5 @@
+[build]
+target = "index.html"
+dist = "dist"
+# The server mounts the interface at /app/.
+public_url = "/app/"

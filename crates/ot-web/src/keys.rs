@@ -27,6 +27,8 @@ pub enum Action {
     Items,
     /// Alt+T: taxes.
     Taxes,
+    /// Alt+M: payment methods and exchange rates.
+    Money,
     /// `/`: focus the list search.
     Search,
     /// Ctrl+A: accept (save) the open form, as in Tally.
@@ -72,6 +74,7 @@ pub fn action(key: &str, mods: Modifiers, typing: bool) -> Option<Action> {
         "p" | "P" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Parties),
         "i" | "I" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Items),
         "t" | "T" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Taxes),
+        "m" | "M" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Money),
         "c" | "C" if mods.alt && !mods.ctrl && !mods.meta => Some(Action::Create),
         _ => None,
     }
@@ -127,6 +130,7 @@ mod tests {
         assert_eq!(action("p", alt, true), Some(Action::Parties));
         assert_eq!(action("I", alt, false), Some(Action::Items));
         assert_eq!(action("t", alt, true), Some(Action::Taxes));
+        assert_eq!(action("M", alt, false), Some(Action::Money));
         assert_eq!(action("C", alt, true), Some(Action::Create));
         assert_eq!(action("Escape", NONE, true), Some(Action::Back));
         assert_eq!(action("a", NONE, false), None);

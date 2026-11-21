@@ -2113,6 +2113,7 @@ version = "0.2.0"
 dependencies = [
  "console_error_panic_hook",
  "gloo-net 0.8.0",
+ "js-sys",
  "leptos",
  "ot-api-types",
  "serde",

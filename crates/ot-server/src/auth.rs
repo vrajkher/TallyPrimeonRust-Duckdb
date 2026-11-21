@@ -273,6 +273,7 @@ const ITEM: &str = "Books Item";
 const ITEM_GROUP: &str = "Books Item Group";
 const UNIT: &str = "Books Uom";
 const TAX: &str = "Books Tax";
+const PAYMENT_METHOD: &str = "Books Payment Method";
 
 fn rule(method: &Method, path: &str) -> Option<Rule> {
     let path = path.strip_prefix("/api/v1").map_or(path, |rest| rest);
@@ -321,6 +322,16 @@ fn rule(method: &Method, path: &str) -> Option<Rule> {
             Rule::Any(&[(PARTY, Perm::Delete)])
         }
         (false, "/parties/{id}") => Rule::Any(&[(PARTY, Perm::Write)]),
+        (true, "/payment-methods") => Rule::Any(&[(PAYMENT_METHOD, Perm::Read)]),
+        (false, "/payment-methods") => Rule::Any(&[(PAYMENT_METHOD, Perm::Create)]),
+        (false, "/payment-methods/{id}") if *method == Method::DELETE => {
+            Rule::Any(&[(PAYMENT_METHOD, Perm::Delete)])
+        }
+        (false, "/payment-methods/{id}") => Rule::Any(&[(PAYMENT_METHOD, Perm::Write)]),
+        // Rates are not a Frappe DocType: anyone signed in reads them, and changing
+        // them is an accounting setting.
+        (true, "/currencies" | "/exchange-rates" | "/exchange-rates/lookup") => Rule::Signed,
+        (false, "/exchange-rates") => Rule::Any(&[(SETTINGS, Perm::Write)]),
         (true, "/taxes" | "/taxes/{id}") => Rule::Any(&[(TAX, Perm::Read)]),
         (false, "/taxes") => Rule::Any(&[(TAX, Perm::Create)]),
         // Adding GST also adds tax ledgers to the chart.

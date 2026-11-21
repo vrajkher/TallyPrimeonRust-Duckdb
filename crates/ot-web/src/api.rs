@@ -3,8 +3,9 @@
 use gloo_net::http::{Request, Response};
 use ot_api_types::{
     ApiErrorBody, ChartOfAccounts, ChartTemplate, CompanySetup, CountryDefaults, DayBook,
-    DayBookFilter, Item, ItemGroup, ItemInput, NewNumberSeries, NumberSeries, Party, PartyInput,
-    SeriesType, SessionState, Setup, SignIn, Tax, TaxInput, Unit,
+    DayBookFilter, ExchangeRate, Item, ItemGroup, ItemInput, NewNumberSeries, NumberSeries, Party,
+    PartyInput, PaymentMethod, PaymentMethodInput, SeriesType, SessionState, Setup, SignIn, Tax,
+    TaxInput, Unit,
 };
 use serde::de::DeserializeOwned;
 
@@ -216,6 +217,44 @@ pub async fn save_item(id: Option<i64>, input: &ItemInput) -> Result<Item, ApiEr
 
 pub async fn delete_item(id: i64) -> Result<(), ApiError> {
     delete(&format!("/api/v1/items/{id}")).await
+}
+
+pub async fn payment_methods() -> Result<Vec<PaymentMethod>, ApiError> {
+    get("/api/v1/payment-methods").await
+}
+
+pub async fn add_payment_method(input: &PaymentMethodInput) -> Result<PaymentMethod, ApiError> {
+    post("/api/v1/payment-methods", input).await
+}
+
+pub async fn delete_payment_method(id: i64) -> Result<(), ApiError> {
+    delete(&format!("/api/v1/payment-methods/{id}")).await
+}
+
+pub async fn currencies() -> Result<Vec<String>, ApiError> {
+    get("/api/v1/currencies").await
+}
+
+pub async fn exchange_rates() -> Result<Vec<ExchangeRate>, ApiError> {
+    get("/api/v1/exchange-rates").await
+}
+
+pub async fn set_exchange_rate(input: &ExchangeRate) -> Result<ExchangeRate, ApiError> {
+    post("/api/v1/exchange-rates", input).await
+}
+
+pub async fn delete_exchange_rate(rate: &ExchangeRate) -> Result<(), ApiError> {
+    delete(&format!(
+        "/api/v1/exchange-rates?from={}&to={}&date={}",
+        encode(&rate.from_currency),
+        encode(&rate.to_currency),
+        encode(&rate.date)
+    ))
+    .await
+}
+
+pub async fn accounting_settings() -> Result<serde_json::Value, ApiError> {
+    get("/api/v1/settings/accounting").await
 }
 
 pub async fn taxes() -> Result<Vec<Tax>, ApiError> {

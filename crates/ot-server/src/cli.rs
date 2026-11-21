@@ -84,6 +84,12 @@ pub enum Command {
     /// Tax templates, e.g. GST-18.
     #[command(subcommand)]
     Tax(TaxCommand),
+    /// Exchange rates between currencies.
+    #[command(subcommand)]
+    Rate(RateCommand),
+    /// Payment methods: cash, bank and transfers.
+    #[command(subcommand, name = "payment-method")]
+    PaymentMethod(PaymentMethodCommand),
     /// Copy the book to a backup file.
     Backup {
         /// Where to write the copy.
@@ -127,6 +133,35 @@ pub enum ItemCommand {
     },
     /// Delete an item by its ID, as `item list --json` shows it.
     Delete { id: i64 },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RateCommand {
+    /// List the recorded rates, newest first.
+    List,
+    /// Record that one FROM is RATE TO on a date (today if not given).
+    Set {
+        from: String,
+        to: String,
+        rate: String,
+        /// YYYY-MM-DD.
+        #[arg(long)]
+        date: Option<String>,
+    },
+    /// Show the rate to use on a date: the latest on or before it.
+    Get {
+        from: String,
+        to: String,
+        /// YYYY-MM-DD (today if not given).
+        #[arg(long)]
+        date: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PaymentMethodCommand {
+    /// List the payment methods.
+    List,
 }
 
 #[derive(Debug, Subcommand)]
@@ -597,6 +632,98 @@ pub fn run(cli: &Cli, command: &Command, input: &mut dyn BufRead) -> Result<Outp
                 format!("Deleted item {id}."),
                 json!({"deleted": id}),
             ))
+        }
+        Command::Rate(RateCommand::List) => {
+            let rows = open_existing(&path)?.exchange_rates(&Default::default())?;
+            let text = rows
+                .iter()
+                .map(|r| {
+                    format!(
+                        "{}  1 {} = {} {}",
+                        r.date, r.from_currency, r.rate, r.to_currency
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            Ok(Output::new(text, &rows))
+        }
+        Command::Rate(RateCommand::Set {
+            from,
+            to,
+            rate,
+            date,
+        }) => {
+            let date = date
+                .clone()
+                .unwrap_or_else(|| ot_core::setup::today_utc().to_string());
+            let saved = open_existing(&path)?.set_exchange_rate(
+                ot_store::exchange_rates::ExchangeRate {
+                    from_currency: from.clone(),
+                    to_currency: to.clone(),
+                    date,
+                    rate: rate.clone(),
+                },
+            )?;
+            Ok(Output::new(
+                format!(
+                    "Recorded 1 {} = {} {} on {}.",
+                    saved.from_currency, saved.rate, saved.to_currency, saved.date
+                ),
+                &saved,
+            ))
+        }
+        Command::Rate(RateCommand::Get { from, to, date }) => {
+            let date = date
+                .clone()
+                .unwrap_or_else(|| ot_core::setup::today_utc().to_string());
+            let query = ot_store::exchange_rates::RateQuery {
+                from: from.clone(),
+                to: to.clone(),
+                date: date.clone(),
+            };
+            let found = open_existing(&path)?
+                .exchange_rate_on(&query)?
+                .ok_or_else(|| {
+                    CliError::new(
+                        ExitCode::Missing,
+                        format!(
+                            "No {} to {} rate is recorded on or before {date}.",
+                            from.to_uppercase(),
+                            to.to_uppercase()
+                        ),
+                    )
+                })?;
+            Ok(Output::new(
+                format!(
+                    "1 {} = {} {} (rate of {}{})",
+                    from.to_uppercase(),
+                    found.rate,
+                    to.to_uppercase(),
+                    found.date,
+                    if found.inverted {
+                        ", from the opposite pair"
+                    } else {
+                        ""
+                    }
+                ),
+                &found,
+            ))
+        }
+        Command::PaymentMethod(PaymentMethodCommand::List) => {
+            let rows = open_existing(&path)?.payment_methods()?;
+            let text = rows
+                .iter()
+                .map(|m| {
+                    format!(
+                        "{:<16} {:<9} {}",
+                        m.name,
+                        m.method_type.key(),
+                        m.ledger_name.as_deref().unwrap_or("")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            Ok(Output::new(text, &rows))
         }
         Command::Tax(TaxCommand::List) => {
             let rows = open_existing(&path)?.taxes()?;
@@ -1379,6 +1506,42 @@ mod tests {
                 .contains("GST-18               18%  CGST 9% + SGST 9%"),
             "{}",
             list.text
+        );
+    }
+
+    #[test]
+    fn rates_and_payment_methods_from_the_command_line() {
+        let dir = temp("rates");
+        exec(&dir, &["migrate"], "").unwrap();
+        let set = exec(
+            &dir,
+            &["rate", "set", "usd", "inr", "83.25", "--date", "2026-04-01"],
+            "",
+        )
+        .unwrap();
+        assert_eq!(set.text, "Recorded 1 USD = 83.25 INR on 2026-04-01.");
+        let get = exec(
+            &dir,
+            &["rate", "get", "INR", "USD", "--date", "2026-04-02"],
+            "",
+        )
+        .unwrap();
+        assert!(get.text.contains("from the opposite pair"), "{}", get.text);
+        let missing = exec(
+            &dir,
+            &["rate", "get", "EUR", "INR", "--date", "2026-04-02"],
+            "",
+        );
+        assert_eq!(missing.unwrap_err().code, ExitCode::Missing);
+        let bad = exec(&dir, &["rate", "set", "USD", "INR", "0"], "");
+        assert_eq!(bad.unwrap_err().code, ExitCode::Invalid);
+        let list = exec(&dir, &["--json", "rate", "list"], "").unwrap();
+        assert_eq!(list.value.as_array().unwrap().len(), 1);
+        let methods = exec(&dir, &["payment-method", "list"], "").unwrap();
+        assert!(
+            methods.text.contains("Cash") && methods.text.contains("Bank"),
+            "{}",
+            methods.text
         );
     }
 

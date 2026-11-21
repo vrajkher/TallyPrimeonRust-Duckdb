@@ -1369,3 +1369,139 @@ async fn taxes_follow_frappe_roles_and_gst_is_seeded_for_india() {
         StatusCode::FORBIDDEN
     );
 }
+
+#[tokio::test]
+async fn payment_methods_and_exchange_rates() {
+    let app = App::new();
+    let asha = set_up_admin(&app).await;
+    app.post(
+        "/api/v1/company/setup",
+        &asha.write(),
+        json!({"company_name": "Shree Traders", "country": "India", "bank_name": "HDFC Bank"}),
+    )
+    .await;
+    let methods: Vec<ot_api_types::PaymentMethod> =
+        serde_json::from_value(app.get("/api/v1/payment-methods", &asha.read()).await.body)
+            .unwrap();
+    assert_eq!(methods.len(), 2, "Frappe's Cash and Bank");
+
+    let chart: ot_api_types::ChartOfAccounts =
+        serde_json::from_value(app.get("/api/v1/accounts", &asha.read()).await.body).unwrap();
+    let ledger = |name: &str| chart.ledgers.iter().find(|l| l.name == name).unwrap().id;
+    let input = ot_api_types::PaymentMethodInput {
+        name: "UPI".into(),
+        method_type: "transfer".into(),
+        ledger_id: Some(ledger("HDFC Bank")),
+        ..Default::default()
+    };
+    let upi = app
+        .post(
+            "/api/v1/payment-methods",
+            &asha.write(),
+            serde_json::to_value(&input).unwrap(),
+        )
+        .await;
+    assert_eq!(upi.status, StatusCode::CREATED, "{}", upi.body);
+    let cash_bank = app
+        .post(
+            "/api/v1/payment-methods",
+            &asha.write(),
+            json!({"name": "Petty cash", "method_type": "cash", "ledger_id": ledger("HDFC Bank")}),
+        )
+        .await;
+    assert_eq!(cash_bank.status, StatusCode::BAD_REQUEST);
+
+    let currencies = app.get("/api/v1/currencies", &asha.read()).await;
+    assert!(
+        currencies
+            .body
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "USD")
+    );
+    let rate = ot_api_types::ExchangeRate {
+        from_currency: "USD".into(),
+        to_currency: "INR".into(),
+        date: "2026-04-01".into(),
+        rate: "83.25".into(),
+    };
+    let saved = app
+        .post(
+            "/api/v1/exchange-rates",
+            &asha.write(),
+            serde_json::to_value(&rate).unwrap(),
+        )
+        .await;
+    assert_eq!(saved.status, StatusCode::OK, "{}", saved.body);
+    let found: ot_api_types::RateFound = serde_json::from_value(
+        app.get(
+            "/api/v1/exchange-rates/lookup?from=USD&to=INR&date=2026-05-10",
+            &asha.read(),
+        )
+        .await
+        .body,
+    )
+    .unwrap();
+    assert_eq!((found.rate.as_str(), found.inverted), ("83.25", false));
+    let none = app
+        .get(
+            "/api/v1/exchange-rates/lookup?from=USD&to=INR&date=2026-03-01",
+            &asha.read(),
+        )
+        .await;
+    assert_eq!(none.status, StatusCode::NOT_FOUND);
+
+    app.post(
+        "/api/v1/users",
+        &asha.write(),
+        json!({"username": "ravi", "full_name": "Ravi", "password": "another long secret", "roles": ["books_user"]}),
+    )
+    .await;
+    let ravi = Browser::from(
+        &app.post(
+            "/api/v1/session",
+            &[],
+            json!({"username": "ravi", "password": "another long secret"}),
+        )
+        .await,
+    );
+    // Books Users read methods and rates but change neither.
+    assert_eq!(
+        app.get("/api/v1/payment-methods", &ravi.read())
+            .await
+            .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.get("/api/v1/exchange-rates", &ravi.read()).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.post(
+            "/api/v1/exchange-rates",
+            &ravi.write(),
+            serde_json::to_value(&rate).unwrap()
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.post(
+            "/api/v1/payment-methods",
+            &ravi.write(),
+            json!({"name": "Card", "method_type": "bank"})
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    let delete = app
+        .delete(
+            "/api/v1/exchange-rates?from=USD&to=INR&date=2026-04-01",
+            &asha.write(),
+        )
+        .await;
+    assert_eq!(delete.status, StatusCode::NO_CONTENT);
+}

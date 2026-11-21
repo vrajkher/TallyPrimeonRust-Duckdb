@@ -114,6 +114,12 @@ button.nav-link { width: 100%; border: 0; background: none; text-align: left; }
 .conversion select, .conversion input { min-height: 36px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
 .conversion input { width: 110px; }
 .tax-row select { flex: 1 1 180px; min-width: 0; }
+.masters-section { display: grid; gap: 14px; }
+.masters-section h2 { margin: 0; font-size: 18px; }
+.inline-form { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.inline-form .field { flex: 1 1 150px; }
+.rate-form > span { padding-bottom: 10px; font-weight: 650; }
+.rate-form .field { flex: 1 1 110px; }
 .list-view .num { text-align: right; font-variant-numeric: tabular-nums; }
 .series-form { display: grid; grid-template-columns: minmax(140px, 1.4fr) minmax(150px, 1.4fr) minmax(80px, .7fr) minmax(70px, .6fr) auto auto; align-items: end; gap: 12px; }
 .check { display: flex; align-items: center; gap: 8px; min-height: 40px; font-size: 13px; font-weight: 600; }

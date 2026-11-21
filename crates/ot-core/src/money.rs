@@ -20,6 +20,14 @@ pub const NUMBER_LIMIT_UNITS: i64 = 1_000_000_000_000;
 
 /// CLDR fraction digits for currencies that do not use two.
 /// Everything not listed uses two, which is CLDR's default.
+/// Currencies offered first in forms: those of the bundled charts and the most traded.
+/// Any ISO 4217 code is accepted.
+pub const COMMON_CURRENCIES: &[&str] = &[
+    "INR", "USD", "EUR", "GBP", "AED", "SAR", "QAR", "KWD", "OMR", "BHD", "SGD", "HKD", "JPY",
+    "CNY", "AUD", "NZD", "CAD", "CHF", "ZAR", "BDT", "NPR", "LKR", "IDR", "MYR", "THB", "MXN",
+    "GTQ", "NIO", "HUF",
+];
+
 const PRECISIONS: &[(&str, u8)] = &[
     ("BHD", 3),
     ("BIF", 0),

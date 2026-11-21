@@ -338,6 +338,50 @@ pub struct TaxInput {
     pub revision: Option<i32>,
 }
 
+/// A payment method from `GET /api/v1/payment-methods`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaymentMethod {
+    pub id: i64,
+    pub name: String,
+    /// `cash`, `bank` or `transfer`.
+    pub method_type: String,
+    pub ledger_id: Option<i64>,
+    pub ledger_name: Option<String>,
+    pub requires_clearance_date: bool,
+    pub revision: i32,
+}
+
+/// `POST /api/v1/payment-methods`, and `POST /api/v1/payment-methods/{id}` with
+/// `revision` set.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaymentMethodInput {
+    pub name: String,
+    pub method_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ledger_id: Option<i64>,
+    pub requires_clearance_date: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<i32>,
+}
+
+/// One unit of `from_currency` is `rate` units of `to_currency` on `date`; also the
+/// body of `POST /api/v1/exchange-rates`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExchangeRate {
+    pub from_currency: String,
+    pub to_currency: String,
+    pub date: String,
+    pub rate: String,
+}
+
+/// `GET /api/v1/exchange-rates/lookup?from=&to=&date=`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RateFound {
+    pub rate: String,
+    pub date: String,
+    pub inverted: bool,
+}
+
 /// `POST /api/v1/session`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignIn {

@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
+js-sys = "0.3"
 gloo-net = { version = "0.8", default-features = false, features = ["http", "json"] }
 leptos = { version = "0.8.23", features = ["csr"] }
 ot-api-types = { path = "../ot-api-types" }

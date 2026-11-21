@@ -670,6 +670,108 @@ async fn add_gst_taxes(State(db): State<Database>) -> ApiResult<Json<Vec<ot_stor
         .map_err(ApiError)
 }
 
+async fn payment_methods(
+    State(db): State<Database>,
+) -> ApiResult<Json<Vec<ot_store::payment_methods::PaymentMethod>>> {
+    db.read(|store| store.payment_methods())
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn add_payment_method(
+    State(db): State<Database>,
+    Json(input): Json<ot_store::payment_methods::PaymentMethodInput>,
+) -> ApiResult<(StatusCode, Json<ot_store::payment_methods::PaymentMethod>)> {
+    db.write(move |store| store.add_payment_method(input))
+        .await
+        .map(|method| (StatusCode::CREATED, Json(method)))
+        .map_err(ApiError)
+}
+
+async fn update_payment_method(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+    Json(input): Json<ot_store::payment_methods::PaymentMethodInput>,
+) -> ApiResult<Json<ot_store::payment_methods::PaymentMethod>> {
+    db.write(move |store| store.update_payment_method(id, input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn delete_payment_method(
+    State(db): State<Database>,
+    Path(id): Path<i64>,
+) -> ApiResult<StatusCode> {
+    db.write(move |store| store.delete_payment_method(id))
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(ApiError)
+}
+
+/// Currency codes offered first in forms; any ISO 4217 code is accepted.
+async fn currencies() -> Json<&'static [&'static str]> {
+    Json(ot_core::money::COMMON_CURRENCIES)
+}
+
+async fn exchange_rates(
+    State(db): State<Database>,
+    Query(filter): Query<ot_store::exchange_rates::RateFilter>,
+) -> ApiResult<Json<Vec<ot_store::exchange_rates::ExchangeRate>>> {
+    db.read(move |store| store.exchange_rates(&filter))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+async fn set_exchange_rate(
+    State(db): State<Database>,
+    Json(input): Json<ot_store::exchange_rates::ExchangeRate>,
+) -> ApiResult<Json<ot_store::exchange_rates::ExchangeRate>> {
+    db.write(move |store| store.set_exchange_rate(input))
+        .await
+        .map(Json)
+        .map_err(ApiError)
+}
+
+#[derive(serde::Deserialize)]
+struct RateKey {
+    from: String,
+    to: String,
+    date: String,
+}
+
+async fn delete_exchange_rate(
+    State(db): State<Database>,
+    Query(key): Query<RateKey>,
+) -> ApiResult<StatusCode> {
+    db.write(move |store| store.delete_exchange_rate(&key.from, &key.to, &key.date))
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(ApiError)
+}
+
+/// The rate to use on a date; 404 when none is recorded for the pair.
+async fn exchange_rate_lookup(
+    State(db): State<Database>,
+    Query(query): Query<ot_store::exchange_rates::RateQuery>,
+) -> ApiResult<Json<ot_store::exchange_rates::RateFound>> {
+    let (from, to, date) = (query.from.clone(), query.to.clone(), query.date.clone());
+    db.read(move |store| store.exchange_rate_on(&query))
+        .await
+        .map_err(ApiError)?
+        .map(Json)
+        .ok_or_else(|| {
+            ApiError(StoreError::Missing(format!(
+                "No {} to {} rate is recorded on or before {}.",
+                from.trim().to_uppercase(),
+                to.trim().to_uppercase(),
+                date.trim()
+            )))
+        })
+}
+
 /// Indian states and union territories, for address forms.
 async fn indian_states() -> Json<Vec<&'static str>> {
     Json(
@@ -760,6 +862,22 @@ fn book_routes() -> Router<AppState> {
             "/item-groups/{id}",
             post(update_item_group).delete(delete_item_group),
         )
+        .route(
+            "/payment-methods",
+            get(payment_methods).post(add_payment_method),
+        )
+        .route(
+            "/payment-methods/{id}",
+            post(update_payment_method).delete(delete_payment_method),
+        )
+        .route("/currencies", get(currencies))
+        .route(
+            "/exchange-rates",
+            get(exchange_rates)
+                .post(set_exchange_rate)
+                .delete(delete_exchange_rate),
+        )
+        .route("/exchange-rates/lookup", get(exchange_rate_lookup))
         .route("/taxes", get(taxes).post(add_tax))
         .route("/taxes/gst", post(add_gst_taxes))
         .route("/taxes/{id}", get(tax).post(update_tax).delete(delete_tax))
